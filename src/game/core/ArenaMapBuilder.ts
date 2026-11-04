@@ -26,16 +26,16 @@ export function buildArenaMap(scene: THREE.Scene, mapId: string): BuiltArena {
     const context = canvas.getContext("2d");
     if (!context) return undefined;
 
-    const base = new THREE.Color(baseColor);
     const pixels = context.createImageData(canvas.width, canvas.height);
     let state = seed >>> 0;
     for (let index = 0; index < canvas.width * canvas.height; index++) {
       state = (state * 1664525 + 1013904223) >>> 0;
       const noise = ((state >>> 24) & 31) - 15;
       const offset = index * 4;
-      pixels.data[offset] = THREE.MathUtils.clamp(Math.round(base.r * 255 + noise), 0, 255);
-      pixels.data[offset + 1] = THREE.MathUtils.clamp(Math.round(base.g * 255 + noise), 0, 255);
-      pixels.data[offset + 2] = THREE.MathUtils.clamp(Math.round(base.b * 255 + noise), 0, 255);
+      const shade = THREE.MathUtils.clamp(222 + noise, 0, 255);
+      pixels.data[offset] = shade;
+      pixels.data[offset + 1] = shade;
+      pixels.data[offset + 2] = shade;
       pixels.data[offset + 3] = 255;
     }
     context.putImageData(pixels, 0, 0);
@@ -84,7 +84,7 @@ export function buildArenaMap(scene: THREE.Scene, mapId: string): BuiltArena {
     bumpScale = 0
   ) => {
     const result = new THREE.MeshStandardMaterial({
-      color: map ? "#ffffff" : color,
+      color,
       roughness, metalness,
       ...(emissive ? { emissive, emissiveIntensity: 1.15 } : {}),
       ...(map ? { map, bumpMap: map, bumpScale } : {})
