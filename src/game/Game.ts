@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { PlayerController } from './PlayerController';
+import { buildArenaMap, type BuiltArena } from './core/ArenaMapBuilder';
 
 type HudState = {
   health: number;
@@ -12,6 +13,7 @@ type HudState = {
 };
 type GameOptions = {
   mount: HTMLElement;
+  mapId?: string;
   onHud: (state: HudState) => void;
   onHit: () => void;
   onMessage: (message: string) => void;
@@ -22,6 +24,7 @@ export class Game {
   private camera = new THREE.PerspectiveCamera(76, 1, 0.1, 180);
   private renderer: THREE.WebGLRenderer;
   private controller: PlayerController;
+  private arena: BuiltArena;
   private clock = new THREE.Clock();
   private targets: THREE.Group[] = [];
   private raycaster = new THREE.Raycaster();
@@ -54,12 +57,18 @@ export class Game {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.15;
     options.mount.appendChild(this.renderer.domElement);
-    this.camera.position.set(0, 1.7, 8);
     this.scene.background = new THREE.Color('#111722');
     this.scene.fog = new THREE.Fog('#111722', 22, 75);
-    this.controller = new PlayerController(this.camera, this.renderer.domElement);
-    this.buildArena();
-    this.spawnTargets();
+    this.arena = buildArenaMap(this.scene, options.mapId ?? "foundry");
+    const mapBounds = this.arena.definition.bounds;
+    this.camera.position.set(0, 1.7, mapBounds.depth / 2 - 7);
+    this.controller = new PlayerController(
+      this.camera,
+      this.renderer.domElement,
+      mapBounds,
+      this.arena.colliders
+    );
+    this.spawnTargets(mapBounds);
     this.resize();
     window.addEventListener('resize', this.resize);
     window.addEventListener('mousedown', this.onFire);
@@ -69,61 +78,11 @@ export class Game {
     this.animate();
   }
 
-  private buildArena() {
-    this.scene.add(new THREE.HemisphereLight('#b9d4ff', '#202631', 2.0));
-    const sun = new THREE.DirectionalLight('#ffffff', 2.2);
-    sun.position.set(-8, 16, 7);
-    sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
-    this.scene.add(sun);
-
-    const floor = new THREE.Mesh(
-      new THREE.PlaneGeometry(70, 70),
-      new THREE.MeshStandardMaterial({ color: '#252e3a', roughness: 0.88, metalness: 0.12 }),
-    );
-    floor.rotation.x = -Math.PI / 2;
-    floor.receiveShadow = true;
-    this.scene.add(floor);
-
-    const grid = new THREE.GridHelper(70, 70, '#596879', '#394654');
-    grid.position.y = 0.012;
-    const gridMaterials = Array.isArray(grid.material) ? grid.material : [grid.material];
-    gridMaterials.forEach((material) => { material.transparent = true; material.opacity = 0.2; });
-    this.scene.add(grid);
-
-    const wallMat = new THREE.MeshStandardMaterial({ color: '#303b49', roughness: 0.78 });
-    const redMat = new THREE.MeshStandardMaterial({ color: '#c83c4b', emissive: '#4d111b', roughness: 0.5 });
-    const addBox = (x: number, y: number, z: number, sx: number, sy: number, sz: number, mat: THREE.Material) => {
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), mat);
-      mesh.position.set(x, y, z);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      this.scene.add(mesh);
-    };
-    addBox(0, 3, -22, 46, 6, 1, wallMat);
-    addBox(-23, 3, 0, 1, 6, 46, wallMat);
-    addBox(23, 3, 0, 1, 6, 46, wallMat);
-    addBox(0, 3, 23, 46, 6, 1, wallMat);
-    for (let i = -2; i <= 2; i++) addBox(i * 8, 0.12, -21.35, 3.8, 0.18, 0.12, redMat);
-
-    for (const [x, z] of [[-9, -5], [9, -5], [-9, -14], [9, -14], [0, -10]] as number[][]) {
-      addBox(x, 0.9, z, 3.4, 1.8, 2.2, wallMat);
-    }
-    const platformMat = new THREE.MeshStandardMaterial({ color: '#3b4858', roughness: 0.72 });
-    addBox(0, 0.25, -18.5, 18, 0.5, 2.8, platformMat);
-    for (const x of [-18, 18]) {
-      const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.7, 8, 0.7), redMat);
-      pillar.position.set(x, 4, -20);
-      this.scene.add(pillar);
-    }
-  }
-
-  private spawnTargets() {
-    const positions: [number, number][] = [
-      [-13, -17], [-7, -19], [0, -16], [7, -19], [13, -17],
-      [-16, -7], [16, -7], [-5, -11], [5, -11],
-    ];
-    for (const [x, z] of positions) this.createTarget(x, 1.45, z);
+  private spawnTargets(bounds: { width: number; depth: number }) {
+    const targetZ = -bounds.depth / 2 + 14;
+    const lane = bounds.width * 0.31;
+    const positions = [-lane, -lane * 0.52, 0, lane * 0.52, lane];
+    for (const x of positions) this.createTarget(x, 1.45, targetZ);
   }
 
   private createTarget(x: number, y: number, z: number) {
@@ -274,6 +233,7 @@ export class Game {
     window.removeEventListener('mousedown', this.onFire);
     window.removeEventListener('keydown', this.onKey);
     document.removeEventListener('pointerlockchange', this.pointerLockChanged);
+    this.arena.dispose();
     this.renderer.dispose();
   }
 }

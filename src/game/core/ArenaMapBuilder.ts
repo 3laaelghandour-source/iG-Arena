@@ -9,6 +9,7 @@ const palette = {
 
 export interface BuiltArena {
   definition: ArenaMapDefinition;
+  colliders: Array<{ x: number; z: number; width: number; depth: number }>;
   dispose: () => void;
 }
 
@@ -84,6 +85,9 @@ export function buildArenaMap(scene: THREE.Scene, mapId: string): BuiltArena {
 
   return {
     definition,
+    colliders: definition.structures.map((structure) => ({
+      x: structure.x, z: structure.z, width: structure.width, depth: structure.depth
+    })),
     dispose: () => {
       for (const object of owned) {
         scene.remove(object);

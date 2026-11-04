@@ -1,10 +1,12 @@
 import { Game } from "../game/Game";
 import { GAME_MODES } from "../data/gameModes";
+import { ARENA_MAPS } from "../game/core/maps";
 
 type Screen = "home" | "play" | "armory" | "leaderboard" | "profile";
 
 export class App {
   private screen: Screen = "home";
+  private selectedMap = "foundry";
   private game: Game | null = null;
 
   constructor(private root: HTMLElement) {
@@ -94,9 +96,10 @@ export class App {
       '<p>Pick the experience you want to enter. Online playlists will unlock when the multiplayer service is connected.</p>',
       '</section>',
       '<section class="mode-grid">' + GAME_MODES.map((mode, index) => this.renderModeCard(mode, index, true)).join("") + '</section>',
-      '<section class="map-selection">',
-      '<div class="map-selection-copy"><span class="eyebrow">AVAILABLE LOCATION</span><h2>TRAINING <em>FACILITY</em></h2><p>Open practice range · Local session · No account required</p></div>',
-      '<div class="map-selection-action"><span class="availability-pill"><i></i> AVAILABLE</span><button class="button button-primary" data-action="start-training">ENTER TRAINING <span>→</span></button></div>',
+      '<section class="map-catalog">',
+      '<div class="section-heading"><div><span class="eyebrow">MAP ROTATION</span><h2>SELECT AN <em>ARENA</em></h2></div><span class="map-catalog-note">3 BLOCKOUT MAPS</span></div>',
+      '<div class="map-card-grid">' + ARENA_MAPS.map((map) => this.renderMapCard(map)).join("") + '</div>',
+      '<div class="map-selection-action"><span class="availability-pill"><i></i> LOCAL TRAINING AVAILABLE</span><button class="button button-primary" data-action="start-training">ENTER SELECTED MAP <span>→</span></button></div>',
       '</section>',
       '<p class="service-note"><span>i</span> Arena and Deathmatch are shown as planned modes. Matchmaking, player sessions and online scoring are not active yet.</p>'
     ].join("");
@@ -115,6 +118,19 @@ export class App {
       '</div>',
       detailed && !available ? '<p class="mode-detail">' + mode.detail + '</p>' : '',
       '</article>'
+    ].join("");
+  }
+
+  private renderMapCard(map: typeof ARENA_MAPS[number]): string {
+    const selected = this.selectedMap === map.id;
+    return [
+      '<button class="map-card ' + (selected ? "selected" : "") + '" data-map-choice="' + map.id + '" aria-pressed="' + selected + '">',
+      '<span class="map-card-index">' + map.id.toUpperCase() + '</span>',
+      '<strong>' + map.name + '</strong>',
+      '<span class="map-card-environment">' + map.environment + '</span>',
+      '<span class="map-card-description">' + map.description + '</span>',
+      '<span class="map-card-select">' + (selected ? "SELECTED" : "SELECT MAP") + '</span>',
+      '</button>'
     ].join("");
   }
 
@@ -165,18 +181,27 @@ export class App {
       });
     });
 
+    this.root.querySelectorAll<HTMLElement>("[data-map-choice]").forEach((element) => {
+      element.addEventListener("click", () => {
+        const mapId = element.dataset.mapChoice;
+        if (!mapId || !ARENA_MAPS.some((map) => map.id === mapId)) return;
+        this.selectedMap = mapId;
+        this.render();
+      });
+    });
+
     this.root.querySelectorAll<HTMLElement>('[data-action="start-training"]').forEach((element) => {
-      element.addEventListener("click", () => this.startTraining());
+      element.addEventListener("click", () => this.startTraining(this.selectedMap));
     });
   }
 
-  private startTraining(): void {
+  private startTraining(mapId: string = this.selectedMap): void {
     if (this.game) return;
 
     this.root.innerHTML = [
       '<section class="game-view">',
       '<div id="game-root" class="game-canvas"></div>',
-      '<header class="game-topbar"><div class="game-brand"><span class="brand-mark">iG</span><span>TRAINING FACILITY</span></div><button class="game-exit" id="exit-session">EXIT SESSION <span>×</span></button></header>',
+      '<header class="game-topbar"><div class="game-brand"><span class="brand-mark">iG</span><span>TRAINING · ' + mapId.toUpperCase() + '</span></div><button class="game-exit" id="exit-session">EXIT SESSION <span>×</span></button></header>',
       '<section class="hud" aria-live="polite">',
       '<div class="hud-card health-card"><span class="hud-label">HEALTH</span><strong id="health-value">100</strong><div class="meter"><i id="health-fill"></i></div></div>',
       '<div class="hud-card score-card"><span class="hud-label">SCORE</span><strong id="score-value">0000</strong><span class="hud-sub">TARGETS HIT</span></div>',
@@ -191,6 +216,7 @@ export class App {
     ].join("");
 
     this.game = new Game({
+      mapId,
       mount: this.root.querySelector<HTMLElement>("#game-root")!,
       onHud: (state) => {
         this.setText("#health-value", String(state.health));
