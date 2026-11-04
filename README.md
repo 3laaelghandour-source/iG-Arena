@@ -1,64 +1,63 @@
 # iG Arena
 
-A browser-based 3D FPS training prototype built with Three.js, TypeScript and Vite.
+iG Arena is an independent browser-based 3D arena game foundation built with Three.js, TypeScript and Vite. It is inspired by the structure of arena training experiences, but it is a standalone web game and does not require FiveM or another game client.
 
-## Current prototype
+## Current foundation
 
-- First-person camera with mouse look (Pointer Lock).
-- WASD movement and Shift sprint.
-- Single training arena with cover and target lanes.
-- Rifle-style hitscan target practice, magazine and reload.
-- Score, health and ammo HUD.
-- Targets respawn after being hit.
+- Main game shell with Home, Play, Loadout, Rankings and Profile sections.
+- Mode selection for Arena, Deathmatch and Training.
+- A local single-player Training Facility that uses the existing Three.js scene.
+- Clear availability states: online modes are marked as planned until a multiplayer backend exists.
+- Responsive desktop and mobile layouts.
 
-> This is a local single-player prototype. Online multiplayer, accounts, persistent stats, matchmaking and authoritative server validation are not implemented yet.
+## Current playable content
 
-## Requirements
+Training is the only playable mode in this build. It includes first-person mouse look, WASD movement, sprinting, target practice, score, accuracy, session time and reload controls.
 
-- Node.js 20.19+ or 22.12+
-- npm
+The Arena and Deathmatch cards are product direction only. They do not start matchmaking or create online matches.
+
+## Technology
+
+- Three.js for the 3D browser scene.
+- TypeScript and Vite for the client.
+- Planned online layer: Node.js game service with WebSocket connections.
+- Planned persistence: a database-backed player profile, match history and progression service.
 
 ## Run locally
 
-```bash
+Requirements: Node.js 20.19+ or 22.12+ and npm.
+
+\`\`\`bash
 npm install
 npm run dev
-```
-
-Open the local URL printed by Vite. Click **START TRAINING** to lock the mouse. Press **Esc** to release it.
-
-## Controls
-
-| Input | Action |
-| --- | --- |
-| W A S D | Move |
-| Mouse | Aim |
-| Left click | Fire |
-| R | Reload |
-| Shift | Sprint |
-| Esc | Release mouse |
+\`\`\`
 
 ## Build
 
-```bash
+\`\`\`bash
 npm run build
 npm run preview
-```
+\`\`\`
 
 ## Roadmap
 
-1. Prototype polish: movement feel, collision, weapon feedback, target variety and performance.
-2. Multiplayer foundation: Node.js server, WebSocket sessions and server-authoritative state.
-3. Accounts and persistence: PostgreSQL profiles, match history and progression.
-4. Game modes: FFA, Team Deathmatch, private matches and training scenarios.
+1. Build out the core game shell, screen flow and mode definitions.
+2. Add real arena maps, player collision, match rules, rounds, team logic and score handling.
+3. Implement a Node.js multiplayer service with server-authoritative sessions and WebSocket networking.
+4. Add accounts, saved loadouts, profiles, match history, rankings and persistent progression.
+5. Add matchmaking, private rooms, deployment monitoring and production security.
 
-## Project structure
+## Structure
 
-```
+\`\`\`
 src/
+  app/
+    App.ts
+  data/
+    gameModes.ts
   game/
     Game.ts
     PlayerController.ts
   main.ts
   styles.css
-```
+\`\`\`
