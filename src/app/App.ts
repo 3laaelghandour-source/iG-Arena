@@ -42,6 +42,8 @@ export class App {
   private leaderboardError = "";
   private lobbyState: LobbyState | null = null;
   private game: Game | null = null;
+  private trainingStarting = false;
+  private trainingSessionId = 0;
 
   constructor(private root: HTMLElement) {
     this.render();
@@ -560,9 +562,12 @@ export class App {
     this.render();
   }
 
-  private startTraining(mapId: string = this.selectedMap): void {
-    if (this.game) return;
+  private async startTraining(mapId: string = this.selectedMap): Promise<void> {
+    if (this.game || this.trainingStarting) return;
+    this.trainingStarting = true;
+    const sessionId = ++this.trainingSessionId;
     const selected = ARENA_EQUIPMENT.find((item) => item.id === this.selectedEquipment) ?? ARENA_EQUIPMENT[0];
+
     this.root.innerHTML = [
       '<section class="game-view">',
       '<div id="game-root" class="game-canvas"></div>',
@@ -575,43 +580,10 @@ export class App {
       '<div class="hud-card ammo-card"><span class="hud-label" id="equipment-name">' + selected.name + '</span><strong><span id="ammo-value">' + selected.capacity + '</span><small> / ' + selected.reserve + '</small></strong><span class="hud-sub" id="weapon-status">READY</span></div>',
       '</section>',
       '<div class="crosshair" aria-hidden="true"></div><div class="hit-marker" id="hit-marker" aria-hidden="true">+</div>',
-      '<div class="center-message" id="center-message"><div class="eyebrow">LOCAL SOLO SESSION</div><h1 id="overlay-title">ENTER THE <em>RANGE</em></h1><p id="overlay-description">Explore the arena and tag the floating training drones.</p><button id="start-button" class="button button-primary">START TRAINING <span>→</span></button><button id="leave-training" class="leave-training" hidden>LEAVE TRAINING</button><div class="controls-hint">W A S D <span>MOVE</span> · SPACE <span>JUMP</span> · SHIFT <span>SPRINT</span> · CTRL <span>CROUCH</span><br>MOUSE <span>LOOK</span> · CLICK <span>PULSE</span> · R <span>RECHARGE</span></div></div>',
+      '<div class="center-message" id="center-message"><div class="eyebrow">LOCAL SOLO SESSION</div><h1 id="overlay-title">PREPARING <em>ARENA</em></h1><p id="overlay-description">Initializing the physics world and loading arena collision.</p><button id="start-button" class="button button-primary" disabled>PREPARING SESSION…</button><button id="leave-training" class="leave-training" hidden>LEAVE TRAINING</button><div class="controls-hint">W A S D <span>MOVE</span> · SPACE <span>JUMP</span> · SHIFT <span>SPRINT</span> · CTRL <span>CROUCH</span><br>MOUSE <span>LOOK</span> · CLICK <span>SCAN</span> · R <span>RECHARGE</span></div></div>',
       '<div class="bottom-hint">ESC TO PAUSE · R TO RECHARGE</div><div class="toast" id="toast"></div>',
       '</section>'
     ].join("");
-
-    this.game = new Game({
-      mapId,
-      equipmentId: this.selectedEquipment,
-      mount: this.root.querySelector<HTMLElement>("#game-root")!,
-      onHud: (state) => {
-        this.setText("#health-value", String(state.health));
-        this.setText("#score-value", String(state.score).padStart(4, "0"));
-        this.setText("#ammo-value", String(state.ammo));
-        this.setText(".ammo-card small", " / " + state.reserve);
-        this.setText("#weapon-status", state.status);
-        this.setText("#equipment-name", state.equipment);
-        this.setText("#accuracy-value", state.accuracy + "%");
-        this.setText("#time-value", state.elapsed);
-        const fill = this.root.querySelector<HTMLElement>("#health-fill");
-        if (fill) fill.style.width = state.health + "%";
-      },
-      onHit: () => {
-        const marker = this.root.querySelector<HTMLElement>("#hit-marker");
-        if (!marker) return;
-        marker.classList.remove("show");
-        void marker.offsetWidth;
-        marker.classList.add("show");
-        window.setTimeout(() => marker.classList.remove("show"), 150);
-      },
-      onMessage: (message) => {
-        const toast = this.root.querySelector<HTMLElement>("#toast");
-        if (!toast) return;
-        toast.textContent = message;
-        toast.classList.add("visible");
-        window.setTimeout(() => toast.classList.remove("visible"), 1400);
-      }
-    });
 
     const overlay = this.root.querySelector<HTMLElement>("#center-message")!;
     const title = this.root.querySelector<HTMLElement>("#overlay-title")!;
@@ -619,21 +591,77 @@ export class App {
     const startButton = this.root.querySelector<HTMLButtonElement>("#start-button")!;
     const leaveButton = this.root.querySelector<HTMLButtonElement>("#leave-training")!;
 
-    startButton.addEventListener("click", () => this.game?.start());
-    leaveButton.addEventListener("click", () => this.exitTraining());
-    this.root.querySelector("#exit-session")?.addEventListener("click", () => {
-      if (document.pointerLockElement) document.exitPointerLock();
-      else this.exitTraining();
+    startButton.addEventListener("click", () => {
+      if (this.game) this.game.start();
+      else void this.startTraining(mapId);
     });
+    leaveButton.addEventListener("click", () => this.exitTraining());
+    this.root.querySelector("#exit-session")?.addEventListener("click", () => this.exitTraining());
 
-    this.game.onPause = () => {
-      title.innerHTML = 'SESSION <em>PAUSED</em>';
-      description.textContent = "Your local training session is paused.";
-      startButton.innerHTML = 'RESUME TRAINING <span>→</span>';
-      leaveButton.hidden = false;
-      overlay.classList.remove("hidden");
-    };
-    this.game.onResume = () => overlay.classList.add("hidden");
+    try {
+      const game = await Game.create({
+        mapId,
+        equipmentId: this.selectedEquipment,
+        mount: this.root.querySelector<HTMLElement>("#game-root")!,
+        onHud: (state) => {
+          this.setText("#health-value", String(state.health));
+          this.setText("#score-value", String(state.score).padStart(4, "0"));
+          this.setText("#ammo-value", String(state.ammo));
+          this.setText(".ammo-card small", " / " + state.reserve);
+          this.setText("#weapon-status", state.status);
+          this.setText("#equipment-name", state.equipment);
+          this.setText("#accuracy-value", state.accuracy + "%");
+          this.setText("#time-value", state.elapsed);
+          const fill = this.root.querySelector<HTMLElement>("#health-fill");
+          if (fill) fill.style.width = state.health + "%";
+        },
+        onHit: () => {
+          const marker = this.root.querySelector<HTMLElement>("#hit-marker");
+          if (!marker) return;
+          marker.classList.remove("show");
+          void marker.offsetWidth;
+          marker.classList.add("show");
+          window.setTimeout(() => marker.classList.remove("show"), 150);
+        },
+        onMessage: (message) => {
+          const toast = this.root.querySelector<HTMLElement>("#toast");
+          if (!toast) return;
+          toast.textContent = message;
+          toast.classList.add("visible");
+          window.setTimeout(() => toast.classList.remove("visible"), 1400);
+        }
+      });
+
+      if (sessionId !== this.trainingSessionId) {
+        game.dispose();
+        return;
+      }
+
+      this.game = game;
+      this.trainingStarting = false;
+      title.innerHTML = 'ENTER THE <em>ARENA</em>';
+      description.textContent = "Arena physics is ready. Start your local training session.";
+      startButton.disabled = false;
+      startButton.textContent = "START TRAINING";
+
+      this.game.onPause = () => {
+        title.innerHTML = 'SESSION <em>PAUSED</em>';
+        description.textContent = "Your local training session is paused.";
+        startButton.textContent = "RESUME TRAINING";
+        leaveButton.hidden = false;
+        overlay.classList.remove("hidden");
+      };
+      this.game.onResume = () => overlay.classList.add("hidden");
+    } catch (error) {
+      if (sessionId !== this.trainingSessionId) return;
+      this.trainingStarting = false;
+      title.innerHTML = 'ARENA <em>UNAVAILABLE</em>';
+      description.textContent = error instanceof Error
+        ? "The physics engine could not initialize: " + error.message
+        : "The physics engine could not initialize. Check the browser console for details.";
+      startButton.disabled = false;
+      startButton.textContent = "RETRY";
+    }
   }
 
   private setText(selector: string, value: string): void {
@@ -642,6 +670,8 @@ export class App {
   }
 
   private exitTraining(): void {
+    this.trainingSessionId++;
+    this.trainingStarting = false;
     if (document.pointerLockElement) document.exitPointerLock();
     this.game?.dispose();
     this.game = null;
