@@ -3,36 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#090b10" />
-    <meta name="description" content="iG Arena — browser-based FPS training prototype." />
-    <title>iG Arena</title>
+    <meta name="theme-color" content="#0a0b0e" />
+    <meta name="description" content="iG Arena is an independent browser-based arena game." />
+    <title>iG Arena — Enter the Arena</title>
   </head>
   <body>
-    <div id="app">
-      <div id="game-root"></div>
-      <header class="topbar">
-        <a class="brand" href="#" aria-label="iG Arena home"><span class="brand-mark">iG</span><span>ARENA</span></a>
-        <div class="session-label"><span class="live-dot"></span> TRAINING SESSION</div>
-      </header>
-      <section class="hud" aria-live="polite">
-        <div class="hud-card health-card"><span class="hud-label">HEALTH</span><strong id="health-value">100</strong><div class="meter"><i id="health-fill"></i></div></div>
-        <div class="hud-card score-card"><span class="hud-label">SCORE</span><strong id="score-value">0000</strong><span class="hud-sub">TARGETS HIT</span></div>
-        <div class="hud-card accuracy-card"><span class="hud-label">ACCURACY</span><strong id="accuracy-value">100%</strong><span class="hud-sub">HIT RATE</span></div>
-        <div class="hud-card time-card"><span class="hud-label">SESSION</span><strong id="time-value">00:00</strong><span class="hud-sub">ELAPSED TIME</span></div>
-        <div class="hud-card ammo-card"><span class="hud-label">RIFLE</span><strong><span id="ammo-value">30</span><small> / 120</small></strong><span class="hud-sub" id="weapon-status">READY</span></div>
-      </section>
-      <div class="crosshair" aria-hidden="true"><i></i><b></b></div>
-      <div class="hit-marker" id="hit-marker" aria-hidden="true">+</div>
-      <div class="center-message" id="center-message">
-        <div class="eyebrow">iG TRAINING FACILITY</div>
-        <h1 id="overlay-title">ENTER THE <em>ARENA</em></h1>
-        <p id="overlay-description">Warm up. Find your aim. Own the arena.</p>
-        <button id="start-button">START TRAINING <span>→</span></button>
-        <div class="controls-hint">W A S D <span>MOVE</span> · MOUSE <span>AIM</span> · LEFT CLICK <span>FIRE</span> · R <span>RELOAD</span> · SHIFT <span>SPRINT</span></div>
-      </div>
-      <div class="bottom-hint" id="bottom-hint">ESC TO PAUSE · R TO RELOAD</div>
-      <div class="toast" id="toast"></div>
-    </div>
+    <div id="app"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
