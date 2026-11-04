@@ -45,3 +45,27 @@ button span{padding-left:24px;font-size:17px}
 .toast{position:absolute;top:88px;left:50%;transform:translate(-50%,-8px);padding:9px 14px;background:rgba(9,13,19,.85);border:1px solid rgba(255,255,255,.12);color:#e8edf3;font-size:10px;letter-spacing:.06em;opacity:0;transition:.2s;pointer-events:none}
 .toast.visible{opacity:1;transform:translate(-50%,0)}
 @media(max-width:600px){.topbar{height:62px;padding:0 18px}.session-label{font-size:8px;letter-spacing:.1em}.hud{left:14px;right:14px;bottom:26px;gap:6px}.hud-card{min-width:0;flex:1;padding:10px 9px}.hud-card strong{font-size:24px}.ammo-card{min-width:100px}.score-card{margin-left:0}.hud-label,.hud-sub{font-size:7px}.bottom-hint{right:14px;bottom:9px;font-size:7px}.controls-hint{max-width:300px;line-height:2.2;font-size:8px}.center-message p{font-size:11px}}
+
+
+/* Training HUD v2 */
+.accuracy-card,.time-card{border-top-color:#68798d}
+.accuracy-card strong,.time-card strong{font-size:27px}
+#overlay-title{min-height:1em}
+@media(max-width:900px) and (min-width:601px){
+  .hud{left:24px;right:24px;gap:8px}
+  .hud-card{min-width:0;flex:1;padding:11px 12px}
+  .hud-card strong{font-size:25px}
+  .ammo-card{min-width:125px}
+}
+@media(max-width:600px){
+  .hud{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));left:12px;right:12px;bottom:25px;gap:6px}
+  .hud-card{width:auto;min-width:0;padding:9px 8px}
+  .hud-card strong{font-size:21px}
+  .ammo-card{min-width:0;text-align:right}
+  .ammo-card strong{font-size:22px}
+  .accuracy-card strong,.time-card strong{font-size:20px}
+  .hud-label,.hud-sub{font-size:6px;letter-spacing:.1em}
+  .meter{margin-top:6px}
+  .score-card{margin-left:0}
+  .bottom-hint{right:12px;bottom:8px;font-size:6px}
+}
