@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { PlayerController } from "./PlayerController";
 import { buildArenaMap, type BuiltArena } from "./core/ArenaMapBuilder";
-import { getArenaEquipment } from "./core/equipment";
+import { getArenaEquipment, type ArenaEquipment } from "./core/equipment";
 
 type HudState = {
   health: number;
@@ -29,7 +29,7 @@ export class Game {
   private renderer: THREE.WebGLRenderer;
   private controller: PlayerController;
   private arena: BuiltArena;
-  private equipment;
+  private equipment: ArenaEquipment;
   private pulseRig: THREE.Group;
   private clock = new THREE.Clock();
   private targets: THREE.Group[] = [];
@@ -73,6 +73,7 @@ export class Game {
     this.scene.background = new THREE.Color("#101720");
     const mapBounds = this.arena.definition.bounds;
     this.camera.position.set(0, 1.68, mapBounds.depth / 2 - 7);
+    this.scene.add(this.camera);
     this.controller = new PlayerController(
       this.camera,
       this.renderer.domElement,
@@ -307,6 +308,7 @@ export class Game {
     this.recharging = true;
     this.updateHud("RECHARGING");
     window.setTimeout(() => {
+      if (!this.started) return;
       const amount = Math.min(this.equipment.capacity - this.ammo, this.reserve);
       this.ammo += amount;
       this.reserve -= amount;
@@ -404,6 +406,7 @@ export class Game {
   };
 
   dispose() {
+    this.started = false;
     cancelAnimationFrame(this.animation);
     this.controller.dispose();
     window.removeEventListener("resize", this.resize);
