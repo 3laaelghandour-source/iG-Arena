@@ -13,31 +13,92 @@ export function buildArenaMap(scene: THREE.Scene, mapId: string): BuiltArena {
 
   const owned: THREE.Object3D[] = [];
   const materials = new Set<THREE.Material>();
+  const textures = new Set<THREE.Texture>();
   const add = <T extends THREE.Object3D>(object: T): T => {
     scene.add(object);
     owned.push(object);
     return object;
   };
+  const createSurfaceTexture = (baseColor: string, seed: number, repeat: number, brushed = false) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 256;
+    canvas.height = 256;
+    const context = canvas.getContext("2d");
+    if (!context) return undefined;
+
+    const base = new THREE.Color(baseColor);
+    const pixels = context.createImageData(canvas.width, canvas.height);
+    let state = seed >>> 0;
+    for (let index = 0; index < canvas.width * canvas.height; index++) {
+      state = (state * 1664525 + 1013904223) >>> 0;
+      const noise = ((state >>> 24) & 31) - 15;
+      const offset = index * 4;
+      pixels.data[offset] = THREE.MathUtils.clamp(Math.round(base.r * 255 + noise), 0, 255);
+      pixels.data[offset + 1] = THREE.MathUtils.clamp(Math.round(base.g * 255 + noise), 0, 255);
+      pixels.data[offset + 2] = THREE.MathUtils.clamp(Math.round(base.b * 255 + noise), 0, 255);
+      pixels.data[offset + 3] = 255;
+    }
+    context.putImageData(pixels, 0, 0);
+
+    state = seed >>> 0;
+    context.lineWidth = 1;
+    context.strokeStyle = brushed ? "rgba(220,235,245,.055)" : "rgba(225,235,242,.035)";
+    for (let line = 0; line < 74; line++) {
+      state = (state * 1664525 + 1013904223) >>> 0;
+      const y = (state >>> 8) % canvas.height;
+      context.beginPath();
+      context.moveTo(0, y);
+      context.lineTo(canvas.width, y + (brushed ? 0 : ((state >>> 20) % 5) - 2));
+      context.stroke();
+    }
+    if (!brushed) {
+      context.strokeStyle = "rgba(5,10,16,.16)";
+      for (let seam = 32; seam < canvas.width; seam += 64) {
+        context.beginPath();
+        context.moveTo(seam, 0);
+        context.lineTo(seam, canvas.height);
+        context.stroke();
+      }
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(repeat, repeat);
+    texture.anisotropy = 4;
+    textures.add(texture);
+    return texture;
+  };
+
+  const concreteTexture = createSurfaceTexture("#39434e", 381, 2);
+  const metalTexture = createSurfaceTexture("#586675", 814, 2, true);
+  const floorTexture = createSurfaceTexture("#252d37", 157, 7);
+
   const material = (
     color: THREE.ColorRepresentation,
     roughness = 0.72,
     metalness = 0.12,
-    emissive?: THREE.ColorRepresentation
+    emissive?: THREE.ColorRepresentation,
+    map?: THREE.Texture,
+    bumpScale = 0
   ) => {
     const result = new THREE.MeshStandardMaterial({
-      color, roughness, metalness,
-      ...(emissive ? { emissive, emissiveIntensity: 1.15 } : {})
+      color: map ? "#ffffff" : color,
+      roughness, metalness,
+      ...(emissive ? { emissive, emissiveIntensity: 1.15 } : {}),
+      ...(map ? { map, bumpMap: map, bumpScale } : {})
     });
     materials.add(result);
     return result;
   };
 
-  const concrete = material("#39434e", 0.92);
-  const metal = material("#586675", 0.43, 0.6);
-  const darkMetal = material("#202a35", 0.62, 0.42);
-  const trim = material("#718090", 0.36, 0.72);
-  const accent = material("#a83e4d", 0.48, 0.35);
-  const floorMaterial = material("#252d37", 0.96);
+  const concrete = material("#39434e", 0.92, 0.08, undefined, concreteTexture, 0.025);
+  const metal = material("#586675", 0.43, 0.6, undefined, metalTexture, 0.008);
+  const darkMetal = material("#202a35", 0.62, 0.42, undefined, metalTexture, 0.01);
+  const trim = material("#718090", 0.36, 0.72, undefined, metalTexture, 0.006);
+  const accent = material("#a83e4d", 0.48, 0.35, undefined, metalTexture, 0.008);
+  const floorMaterial = material("#252d37", 0.96, 0.02, undefined, floorTexture, 0.018);
   const glowColor = mapId === "district" ? "#63d9e8" : mapId === "overpass" ? "#f3bd72" : "#ef665e";
   const glowMaterial = new THREE.MeshStandardMaterial({
     color: glowColor, emissive: glowColor, emissiveIntensity: 2.2,
@@ -226,6 +287,7 @@ export function buildArenaMap(scene: THREE.Scene, mapId: string): BuiltArena {
       }
       geometries.forEach((geometry) => geometry.dispose());
       materials.forEach((item) => item.dispose());
+      textures.forEach((texture) => texture.dispose());
     }
   };
 }
