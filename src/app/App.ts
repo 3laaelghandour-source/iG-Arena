@@ -570,7 +570,7 @@ export class App {
       '<section class="hud" aria-live="polite">',
       '<div class="hud-card health-card"><span class="hud-label">ENERGY</span><strong id="health-value">100</strong><div class="meter"><i id="health-fill"></i></div></div>',
       '<div class="hud-card score-card"><span class="hud-label">SCORE</span><strong id="score-value">0000</strong><span class="hud-sub">DRONES TAGGED</span></div>',
-      '<div class="hud-card accuracy-card"><span class="hud-label">ACCURACY</span><strong id="accuracy-value">100%</strong><span class="hud-sub">PULSE RATE</span></div>',
+      '<div class="hud-card accuracy-card"><span class="hud-label">ACCURACY</span><strong id="accuracy-value">100%</strong><span class="hud-sub">HIT RATE</span></div>',
       '<div class="hud-card time-card"><span class="hud-label">SESSION</span><strong id="time-value">00:00</strong><span class="hud-sub">ELAPSED TIME</span></div>',
       '<div class="hud-card ammo-card"><span class="hud-label" id="equipment-name">' + selected.name + '</span><strong><span id="ammo-value">' + selected.capacity + '</span><small> / ' + selected.reserve + '</small></strong><span class="hud-sub" id="weapon-status">READY</span></div>',
       '</section>',
