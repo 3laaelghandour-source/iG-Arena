@@ -43,7 +43,7 @@ Run npm run build, then npm run preview.
 
 ## Structure
 
-- src/app/App.ts.ts — screen flow and game shell.
+- src/app/App.ts — screen flow and game shell.
 - src/data/gameModes.ts — mode definitions and availability.
 - src/game/Game.ts — current local training scene.
 - src/game/PlayerController.ts — local player movement and camera controls.
