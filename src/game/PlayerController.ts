@@ -1,21 +1,13 @@
 import * as THREE from "three";
-import type { SpawnPoint } from "./core/maps";
-
-type MapBounds = { width: number; depth: number };
-type MapCollider = SpawnPoint & { width: number; depth: number };
+import { ArenaPhysics } from "./core/PhysicsWorld";
 
 export class PlayerController {
   private keys = new Set<string>();
   private yaw = 0;
   private pitch = 0;
-  private verticalVelocity = 0;
-  private verticalOffset = 0;
-  private grounded = true;
-  private jumpRequested = false;
   private bobTime = 0;
-  private readonly standingHeight = 1.68;
-  private readonly crouchedHeight = 1.12;
-  private readonly radius = 0.38;
+  private jumpRequested = false;
+  private grounded = true;
   private readonly velocity = new THREE.Vector3();
   private readonly desired = new THREE.Vector3();
 
@@ -23,10 +15,7 @@ export class PlayerController {
     if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.code)) {
       event.preventDefault();
     }
-    if (event.code === "Space" && !this.keys.has("Space") && this.grounded &&
-      !this.keys.has("ControlLeft") && !this.keys.has("ControlRight")) {
-      this.jumpRequested = true;
-    }
+    if (event.code === "Space" && !event.repeat) this.jumpRequested = true;
     this.keys.add(event.code);
   };
   private onKeyUp = (event: KeyboardEvent) => {
@@ -44,9 +33,10 @@ export class PlayerController {
   constructor(
     private camera: THREE.PerspectiveCamera,
     private element: HTMLElement,
-    private bounds: MapBounds,
-    private colliders: readonly MapCollider[] = []
+    private physics: ArenaPhysics
   ) {
+    const position = physics.position;
+    this.camera.position.set(position.x, position.y + physics.eyeHeight, position.z);
     window.addEventListener("keydown", this.onKeyDown, { passive: false });
     window.addEventListener("keyup", this.onKeyUp);
     window.addEventListener("blur", this.clearKeys);
@@ -54,21 +44,28 @@ export class PlayerController {
   }
 
   get motionAmount(): number {
-    return Math.min(1, this.velocity.length() / 10);
+    return Math.min(1, Math.hypot(this.velocity.x, this.velocity.z) / 10.5);
   }
 
   update(delta: number) {
-    const dt = Math.min(delta, 0.04);
+    const dt = Math.min(delta, 0.033);
     const forward = Number(this.keys.has("KeyW")) - Number(this.keys.has("KeyS"));
     const side = Number(this.keys.has("KeyD")) - Number(this.keys.has("KeyA"));
+    const crouching = this.keys.has("ControlLeft") || this.keys.has("ControlRight");
+    const sprinting = !crouching && (this.keys.has("ShiftLeft") || this.keys.has("ShiftRight"));
+
+    if (crouching !== this.physics.isCrouched) {
+      this.physics.setCrouched(crouching);
+    }
+
     this.desired.set(side, 0, -forward);
     if (this.desired.lengthSq() > 1) this.desired.normalize();
     this.desired.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.yaw);
 
-    const crouching = this.keys.has("ControlLeft") || this.keys.has("ControlRight");
-    const sprinting = !crouching && (this.keys.has("ShiftLeft") || this.keys.has("ShiftRight"));
-    const maxSpeed = crouching ? 3.6 : sprinting ? 10.5 : 7.1;
-    const acceleration = this.desired.lengthSq() > 0 ? 25 : 17;
+    const maxSpeed = crouching ? 3.2 : sprinting ? 9.7 : 6.4;
+    const acceleration = this.grounded
+      ? this.desired.lengthSq() > 0 ? 24 : 19
+      : 7.5;
 
     this.velocity.x = THREE.MathUtils.damp(
       this.velocity.x, this.desired.x * maxSpeed, acceleration, dt
@@ -77,72 +74,44 @@ export class PlayerController {
       this.velocity.z, this.desired.z * maxSpeed, acceleration, dt
     );
 
-    if (crouching) this.jumpRequested = false;
+    let verticalSpeed = this.verticalSpeed;
     if (this.jumpRequested && this.grounded && !crouching) {
-      this.verticalVelocity = 6.1;
+      verticalSpeed = 6.2;
       this.grounded = false;
-      this.jumpRequested = false;
     }
+    this.jumpRequested = false;
+    verticalSpeed -= 19.6 * dt;
+    this.verticalSpeed = verticalSpeed;
 
-    this.verticalVelocity -= 18 * dt;
-    this.verticalOffset += this.verticalVelocity * dt;
-    if (this.verticalOffset <= 0) {
-      this.verticalOffset = 0;
-      this.verticalVelocity = 0;
-      this.grounded = true;
-    }
-
-    const currentX = this.camera.position.x;
-    const currentZ = this.camera.position.z;
-    const boundaryInset = this.radius + 0.62;
-    const minX = -this.bounds.width / 2 + boundaryInset;
-    const maxX = this.bounds.width / 2 - boundaryInset;
-    const minZ = -this.bounds.depth / 2 + boundaryInset;
-    const maxZ = this.bounds.depth / 2 - boundaryInset;
-
-    let nextX = THREE.MathUtils.clamp(currentX + this.velocity.x * dt, minX, maxX);
-    let nextZ = currentZ;
-
-    // Resolve each axis independently so the player can slide along walls.
-    for (const obstacle of this.colliders) {
-      const overlapsZ = Math.abs(nextZ - obstacle.z) < obstacle.depth / 2 + this.radius;
-      const crossesX = nextX > obstacle.x - obstacle.width / 2 - this.radius &&
-        nextX < obstacle.x + obstacle.width / 2 + this.radius;
-      if (overlapsZ && crossesX) {
-        nextX = currentX <= obstacle.x
-          ? obstacle.x - obstacle.width / 2 - this.radius
-          : obstacle.x + obstacle.width / 2 + this.radius;
-        this.velocity.x = 0;
-      }
-    }
-
-    nextZ = THREE.MathUtils.clamp(currentZ + this.velocity.z * dt, minZ, maxZ);
-    for (const obstacle of this.colliders) {
-      const overlapsX = Math.abs(nextX - obstacle.x) < obstacle.width / 2 + this.radius;
-      const crossesZ = nextZ > obstacle.z - obstacle.depth / 2 - this.radius &&
-        nextZ < obstacle.z + obstacle.depth / 2 + this.radius;
-      if (overlapsX && crossesZ) {
-        nextZ = currentZ <= obstacle.z
-          ? obstacle.z - obstacle.depth / 2 - this.radius
-          : obstacle.z + obstacle.depth / 2 + this.radius;
-        this.velocity.z = 0;
-      }
-    }
+    const result = this.physics.move({
+      x: this.velocity.x * dt,
+      y: verticalSpeed * dt,
+      z: this.velocity.z * dt
+    });
+    this.grounded = result.grounded;
+    if (this.grounded && this.verticalSpeed < 0) this.verticalSpeed = 0;
 
     const speed = Math.hypot(this.velocity.x, this.velocity.z);
-    const targetHeight = crouching ? this.crouchedHeight : this.standingHeight;
-    const bob = this.grounded && speed > 0.7
-      ? Math.sin(this.bobTime += dt * (sprinting ? 13 : 9)) * (sprinting ? 0.045 : 0.025)
+    const bob = this.grounded && speed > 0.7 && !crouching
+      ? Math.sin(this.bobTime += dt * (sprinting ? 12.5 : 8.5)) * (sprinting ? 0.042 : 0.022)
       : 0;
-    if (speed <= 0.7) this.bobTime = 0;
+    if (speed <= 0.7 || !this.grounded) this.bobTime = 0;
 
-    this.camera.position.set(nextX, targetHeight + this.verticalOffset + bob, nextZ);
+    this.camera.position.set(
+      result.position.x,
+      result.position.y + this.physics.eyeHeight + bob,
+      result.position.z
+    );
     const targetFov = sprinting && speed > 2 ? 81 : 76;
     this.camera.fov = THREE.MathUtils.damp(this.camera.fov, targetFov, 5, dt);
     this.camera.updateProjectionMatrix();
   }
 
-  private clearKeys = () => this.keys.clear();
+  private verticalSpeed = 0;
+  private clearKeys = () => {
+    this.keys.clear();
+    this.jumpRequested = false;
+  };
 
   dispose() {
     window.removeEventListener("keydown", this.onKeyDown);
