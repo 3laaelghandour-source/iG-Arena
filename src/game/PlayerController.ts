@@ -11,6 +11,7 @@ export class PlayerController {
   private verticalVelocity = 0;
   private verticalOffset = 0;
   private grounded = true;
+  private jumpRequested = false;
   private bobTime = 0;
   private readonly standingHeight = 1.68;
   private readonly crouchedHeight = 1.12;
@@ -22,9 +23,16 @@ export class PlayerController {
     if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.code)) {
       event.preventDefault();
     }
+    if (event.code === "Space" && !this.keys.has("Space") && this.grounded &&
+      !this.keys.has("ControlLeft") && !this.keys.has("ControlRight")) {
+      this.jumpRequested = true;
+    }
     this.keys.add(event.code);
   };
-  private onKeyUp = (event: KeyboardEvent) => this.keys.delete(event.code);
+  private onKeyUp = (event: KeyboardEvent) => {
+    this.keys.delete(event.code);
+    if (event.code === "Space") this.jumpRequested = false;
+  };
   private onMouseMove = (event: MouseEvent) => {
     if (document.pointerLockElement !== this.element) return;
     this.yaw -= event.movementX * 0.00215;
@@ -69,9 +77,11 @@ export class PlayerController {
       this.velocity.z, this.desired.z * maxSpeed, acceleration, dt
     );
 
-    if (this.keys.has("Space") && this.grounded && !crouching) {
+    if (crouching) this.jumpRequested = false;
+    if (this.jumpRequested && this.grounded && !crouching) {
       this.verticalVelocity = 6.1;
       this.grounded = false;
+      this.jumpRequested = false;
     }
 
     this.verticalVelocity -= 18 * dt;
@@ -84,10 +94,11 @@ export class PlayerController {
 
     const currentX = this.camera.position.x;
     const currentZ = this.camera.position.z;
-    const minX = -this.bounds.width / 2 + this.radius;
-    const maxX = this.bounds.width / 2 - this.radius;
-    const minZ = -this.bounds.depth / 2 + this.radius;
-    const maxZ = this.bounds.depth / 2 - this.radius;
+    const boundaryInset = this.radius + 0.62;
+    const minX = -this.bounds.width / 2 + boundaryInset;
+    const maxX = this.bounds.width / 2 - boundaryInset;
+    const minZ = -this.bounds.depth / 2 + boundaryInset;
+    const maxZ = this.bounds.depth / 2 - boundaryInset;
 
     let nextX = THREE.MathUtils.clamp(currentX + this.velocity.x * dt, minX, maxX);
     let nextZ = currentZ;
