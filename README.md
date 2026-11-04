@@ -27,17 +27,11 @@ The Arena and Deathmatch cards are product direction only. They do not start mat
 
 Requirements: Node.js 20.19+ or 22.12+ and npm.
 
-\`\`\`bash
-npm install
-npm run dev
-\`\`\`
+Run npm install, then npm run dev.
 
 ## Build
 
-\`\`\`bash
-npm run build
-npm run preview
-\`\`\`
+Run npm run build, then npm run preview.
 
 ## Roadmap
 
@@ -49,15 +43,9 @@ npm run preview
 
 ## Structure
 
-\`\`\`
-src/
-  app/
-    App.ts
-  data/
-    gameModes.ts
-  game/
-    Game.ts
-    PlayerController.ts
-  main.ts
-  styles.css
-\`\`\`
+- src/app/App.ts.ts — screen flow and game shell.
+- src/data/gameModes.ts — mode definitions and availability.
+- src/game/Game.ts — current local training scene.
+- src/game/PlayerController.ts — local player movement and camera controls.
+- src/main.ts — application entry point.
+- src/styles.css — application and game presentation.
