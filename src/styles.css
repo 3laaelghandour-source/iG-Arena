@@ -229,3 +229,72 @@ h1 em,h2 em{color:#e45a68;font-style:normal}
 .leaderboard-empty strong{font:800 22px "Barlow Condensed",sans-serif;letter-spacing:.08em}
 .leaderboard-empty p{margin:9px 0 0;color:#9398a1;font-size:9px;line-height:1.7}
 @media(max-width:680px){.account-page{padding:48px 0}.account-heading{align-items:flex-start;flex-direction:column}.account-heading .button{align-self:flex-start}.auth-card{padding:18px}.account-stats-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.account-profile-card{gap:10px;padding:13px}.account-avatar{width:43px;height:43px}.account-tag{font-size:6px;padding:6px}.leaderboard-header,.leaderboard-row{grid-template-columns:40px 1fr 58px 75px;gap:7px;padding:12px 9px}.leaderboard-header{font-size:6px}.leaderboard-row{font-size:7px}.leaderboard-row strong{font-size:8px}.leaderboard-row b{font-size:8px}}
+
+/* Arena environment, player movement and equipment presentation */
+.map-preview{height:76px;width:100%;display:block;position:relative;overflow:hidden;border:1px solid rgba(255,255,255,.08);background-color:#17212b;background-image:linear-gradient(rgba(255,255,255,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.045) 1px,transparent 1px);background-size:14px 14px}
+.map-preview:before,.map-preview:after{content:"";position:absolute;display:block;pointer-events:none}
+.map-preview:before{inset:17px 24%;border:1px solid rgba(220,236,245,.38);transform:skewY(-12deg);background:linear-gradient(135deg,rgba(220,236,245,.12),rgba(220,236,245,.015))}
+.map-preview:after{left:50%;top:7px;width:1px;height:62px;background:rgba(255,255,255,.2);transform:rotate(38deg)}
+.map-preview i{position:absolute;display:block;width:22%;height:8px;background:rgba(126,149,166,.45);border:1px solid rgba(210,224,236,.16);transform:skewY(-12deg)}
+.map-preview i:nth-child(1){left:10%;top:18px}
+.map-preview i:nth-child(2){right:10%;top:46px}
+.map-preview i:nth-child(3){left:39%;top:48px;width:18%;height:5px}
+.map-preview b{position:absolute;left:50%;top:50%;width:18px;height:18px;border:1px solid var(--map-glow,#ef665e);border-radius:50%;box-shadow:0 0 16px var(--map-glow,#ef665e);transform:translate(-50%,-50%)}
+.map-foundry{--map-glow:#ef7462}
+.map-foundry .map-preview{background-color:#261d20}
+.map-district{--map-glow:#63d9e8}
+.map-district .map-preview{background-color:#16272c}
+.map-overpass{--map-glow:#f3bd72}
+.map-overpass .map-preview{background-color:#29271f}
+.map-card .map-preview{margin-bottom:3px}
+.map-card.selected .map-preview{border-color:var(--map-glow,#e45a68)}
+.map-card strong{font-size:29px}
+.map-card{min-height:260px}
+
+.armory-page{max-width:1100px;min-height:690px;margin:0 auto;padding:64px 0 62px}
+.armory-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin:18px 0 31px}
+.armory-heading h1{margin:0;font:900 clamp(54px,6.8vw,82px)/.9 "Barlow Condensed",sans-serif}
+.armory-heading h1 em{color:#e45a68;font-style:normal}
+.armory-heading p{max-width:550px;margin:11px 0 0;color:#969ba4;font-size:11px;line-height:1.8}
+.equipped-chip{min-width:170px;padding:12px 15px;border:1px solid rgba(102,231,242,.25);background:rgba(29,58,66,.22)}
+.equipped-chip span,.equipped-chip strong{display:block}
+.equipped-chip span{color:#929da7;font-size:7px;font-weight:800;letter-spacing:.17em}
+.equipped-chip strong{margin-top:7px;color:#9beef4;font:800 18px "Barlow Condensed",sans-serif;letter-spacing:.08em}
+.equipment-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px}
+.equipment-card{min-width:0;display:flex;flex-direction:column;align-items:stretch;position:relative;padding:13px 15px 15px;border:1px solid rgba(255,255,255,.1);background:linear-gradient(150deg,#1b222a,#111419);color:#f2f3f5;text-align:left;cursor:pointer;transition:border-color .2s,transform .2s,background .2s}
+.equipment-card:hover{transform:translateY(-3px);border-color:color-mix(in srgb,var(--equipment-accent) 60%,transparent)}
+.equipment-card.equipped{border-color:var(--equipment-accent);background:linear-gradient(150deg,color-mix(in srgb,var(--equipment-glow) 22%,#1b222a),#111419)}
+.equipment-card.equipped:after{content:"";position:absolute;top:0;left:15px;width:38px;height:2px;background:var(--equipment-accent);box-shadow:0 0 13px var(--equipment-accent)}
+.equipment-art{height:158px;display:grid;place-items:center;position:relative;overflow:hidden;margin-bottom:15px;border:1px solid rgba(255,255,255,.055);background:radial-gradient(ellipse at 50% 55%,color-mix(in srgb,var(--equipment-glow) 28%,transparent),transparent 58%),linear-gradient(135deg,rgba(255,255,255,.035),transparent 58%)}
+.equipment-halo{position:absolute;width:116px;height:116px;border:1px solid color-mix(in srgb,var(--equipment-accent) 42%,transparent);border-radius:50%;box-shadow:0 0 34px color-mix(in srgb,var(--equipment-glow) 35%,transparent),inset 0 0 20px color-mix(in srgb,var(--equipment-glow) 22%,transparent)}
+.equipment-device{width:82px;height:37px;display:block;position:relative;border:1px solid color-mix(in srgb,var(--equipment-accent) 75%,#56616d);border-radius:7px;background:linear-gradient(145deg,#73828c,#283541 58%,#16212a);box-shadow:0 12px 25px rgba(0,0,0,.45);transform:rotate(-24deg) skewX(-12deg)}
+.equipment-device:before{content:"";position:absolute;left:25px;top:-17px;width:31px;height:31px;border:5px solid var(--equipment-accent);border-radius:50%;box-shadow:0 0 17px var(--equipment-glow),inset 0 0 12px var(--equipment-glow)}
+.equipment-device:after{content:"";position:absolute;left:34px;top:-8px;width:13px;height:13px;border-radius:50%;background:var(--equipment-accent);box-shadow:0 0 16px var(--equipment-accent)}
+.equipment-device i{position:absolute;left:8px;top:8px;width:11px;height:18px;background:#1b2731;border-radius:3px}
+.equipment-device b{position:absolute;right:7px;top:9px;width:17px;height:5px;background:var(--equipment-accent);box-shadow:0 0 9px var(--equipment-glow)}
+.equipment-art>small{position:absolute;right:10px;bottom:8px;color:#a6abb3;font:700 11px "Barlow Condensed",sans-serif;letter-spacing:.13em}
+.equipment-category{color:var(--equipment-accent);font-size:7px;font-weight:800;letter-spacing:.15em}
+.equipment-card>strong{margin-top:7px;font:800 29px/.95 "Barlow Condensed",sans-serif;letter-spacing:.04em}
+.equipment-card>p{min-height:46px;margin:8px 0 14px;color:#969da6;font-size:9px;line-height:1.7}
+.equipment-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;padding:11px 0;border-top:1px solid rgba(255,255,255,.08);border-bottom:1px solid rgba(255,255,255,.08)}
+.equipment-stats span{display:flex;flex-direction:column;gap:5px}
+.equipment-stats small{color:#858d97;font-size:6px;font-weight:800;letter-spacing:.12em}
+.equipment-stats b{color:#e9edf0;font:800 19px "Barlow Condensed",sans-serif}
+.equipment-select{margin-top:13px;color:#a5abb4;font-size:7px;font-weight:800;letter-spacing:.14em}
+.equipment-card.equipped .equipment-select{color:var(--equipment-accent)}
+.armory-footer{display:flex;align-items:center;justify-content:space-between;gap:15px;margin-top:22px}
+.armory-note{display:flex;align-items:center;gap:8px;color:#8a929c;font-size:7px;font-weight:800;letter-spacing:.12em}
+.armory-note i{width:6px;height:6px;border-radius:50%;background:#83d4a0;box-shadow:0 0 10px rgba(131,212,160,.45)}
+.armory-disclaimer{margin:17px 0 0;color:#747d88;font-size:8px;line-height:1.7}
+@media(max-width:900px){.equipment-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.armory-heading{align-items:flex-start;flex-direction:column}.equipped-chip{min-width:0}}
+@media(max-width:600px){.armory-page{padding:45px 0}.equipment-grid{grid-template-columns:1fr}.equipment-card{padding:12px}.equipment-art{height:138px}.equipment-card>p{min-height:0}.armory-footer{align-items:flex-start;flex-direction:column}.armory-footer .button{width:100%}.map-card{min-height:250px}}
+
+.game-equipment-tag{margin-left:5px;padding:6px 9px;border:1px solid rgba(102,231,242,.25);color:#9cebf2;font-size:7px;font-weight:800;letter-spacing:.12em}
+.game-canvas canvas{touch-action:none}
+.crosshair:before,.crosshair:after{background:#ccfbff;box-shadow:0 0 7px rgba(102,231,242,.8)}
+.crosshair:after{box-shadow:0 0 7px rgba(102,231,242,.8)}
+.hud-card{backdrop-filter:blur(14px);background:rgba(8,13,19,.78)}
+.ammo-card{border-top-color:#67dce8}
+.ammo-card .hud-label{color:#9beaf0}
+.hit-marker{color:#9af4f4;text-shadow:0 0 12px #31b8c9}
+@media(max-width:680px){.game-equipment-tag{display:none}.hud{grid-template-columns:repeat(3,minmax(0,1fr));bottom:18px}.hud-card strong{font-size:19px}.ammo-card strong{font-size:21px}.controls-hint{max-width:310px}.armory-heading h1{font-size:57px}}
