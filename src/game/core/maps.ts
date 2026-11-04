@@ -75,6 +75,8 @@ export const ARENA_MAPS: readonly ArenaMapDefinition[] = [
       { x: -19, z: 0, width: 4, depth: 17, height: 2.5, material: "concrete" },
       { x: 19, z: 0, width: 4, depth: 17, height: 2.5, material: "concrete" },
       { x: 0, z: 0, width: 7, depth: 7, height: 4, material: "accent" },
+      { x: -14, z: 0, width: 1.4, depth: 1.4, height: 5.2, material: "metal" },
+      { x: 14, z: 0, width: 1.4, depth: 1.4, height: 5.2, material: "metal" },
       { x: -29, z: -29, width: 8, depth: 4, height: 2.3, material: "concrete" },
       { x: 29, z: 29, width: 8, depth: 4, height: 2.3, material: "concrete" }
     ],

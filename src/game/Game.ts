@@ -1,6 +1,9 @@
-import * as THREE from 'three';
-import { PlayerController } from './PlayerController';
-import { buildArenaMap, type BuiltArena } from './core/ArenaMapBuilder';
+import * as THREE from "three";
+import { PlayerController } from "./PlayerController";
+import { buildArenaMap, type BuiltArena } from "./core/ArenaMapBuilder";
+import { getArenaEquipment, type ArenaEquipment } from "./core/equipment";
+import { getArenaMap } from "./core/maps";
+import { createArenaPhysics, type ArenaPhysics } from "./core/PhysicsWorld";
 
 type HudState = {
   health: number;
@@ -10,31 +13,38 @@ type HudState = {
   status: string;
   accuracy: number;
   elapsed: string;
+  equipment: string;
 };
 type GameOptions = {
   mount: HTMLElement;
   mapId?: string;
+  equipmentId?: string;
   onHud: (state: HudState) => void;
   onHit: () => void;
   onMessage: (message: string) => void;
 };
+type PulseEffect = { group: THREE.Group; expiresAt: number };
 
 export class Game {
   private scene = new THREE.Scene();
   private camera = new THREE.PerspectiveCamera(76, 1, 0.1, 180);
   private renderer: THREE.WebGLRenderer;
   private controller: PlayerController;
+  private physics: ArenaPhysics;
   private arena: BuiltArena;
+  private equipment: ArenaEquipment;
+  private pulseRig: THREE.Group;
   private clock = new THREE.Clock();
   private targets: THREE.Group[] = [];
+  private pulseEffects: PulseEffect[] = [];
   private raycaster = new THREE.Raycaster();
-  private ammo = 30;
-  private reserve = 120;
+  private ammo: number;
+  private reserve: number;
   private score = 0;
   private health = 100;
   private shotsFired = 0;
   private hits = 0;
-  private reloading = false;
+  private recharging = false;
   private started = false;
   private animation = 0;
   private lastShot = 0;
@@ -43,72 +53,194 @@ export class Game {
   private pausedAt = 0;
   private pausedDuration = 0;
   private onFire = (event: MouseEvent) => { if (event.button === 0) this.shoot(); };
-  private onKey = (event: KeyboardEvent) => { if (event.code === 'KeyR') this.reload(); };
+  private onKey = (event: KeyboardEvent) => { if (event.code === "KeyR") this.recharge(); };
 
   onPause?: () => void;
   onResume?: () => void;
 
-  constructor(private options: GameOptions) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+  static async create(options: GameOptions): Promise<Game> {
+    const mapId = options.mapId ?? "foundry";
+    const definition = getArenaMap(mapId);
+    if (!definition) throw new Error(`Unknown arena map: ${mapId}`);
+    const physics = await createArenaPhysics(definition);
+    try {
+      return new Game(options, physics);
+    } catch (error) {
+      physics.dispose();
+      throw error;
+    }
+  }
+
+  private constructor(private options: GameOptions, physics: ArenaPhysics) {
+    this.physics = physics;
+    this.equipment = getArenaEquipment(options.equipmentId ?? "pulse-arc");
+    this.ammo = this.equipment.capacity;
+    this.reserve = this.equipment.reserve;
+
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.65));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.15;
+    this.renderer.toneMappingExposure = 1.12;
     options.mount.appendChild(this.renderer.domElement);
-    this.scene.background = new THREE.Color('#111722');
-    this.scene.fog = new THREE.Fog('#111722', 22, 75);
+
     this.arena = buildArenaMap(this.scene, options.mapId ?? "foundry");
+    this.scene.background = new THREE.Color("#101720");
     const mapBounds = this.arena.definition.bounds;
-    this.camera.position.set(0, 1.7, mapBounds.depth / 2 - 7);
+    this.scene.add(this.camera);
     this.controller = new PlayerController(
       this.camera,
       this.renderer.domElement,
-      mapBounds,
-      this.arena.colliders
+      this.physics
     );
+
+    this.pulseRig = this.createPulseRig();
+    this.camera.add(this.pulseRig);
     this.spawnTargets(mapBounds);
     this.resize();
-    window.addEventListener('resize', this.resize);
-    window.addEventListener('mousedown', this.onFire);
-    window.addEventListener('keydown', this.onKey);
-    document.addEventListener('pointerlockchange', this.pointerLockChanged);
-    this.updateHud('READY');
+    window.addEventListener("resize", this.resize);
+    window.addEventListener("mousedown", this.onFire);
+    window.addEventListener("keydown", this.onKey);
+    document.addEventListener("pointerlockchange", this.pointerLockChanged);
+    this.updateHud("READY");
     this.animate();
+  }
+
+  private createPulseRig(): THREE.Group {
+    // A wrist-mounted energy projector: intentionally stylized, with no real-world weapon parts.
+    const rig = new THREE.Group();
+    rig.position.set(0.34, -0.29, -0.48);
+    rig.rotation.set(-0.13, -0.2, -0.06);
+
+    const shell = new THREE.MeshStandardMaterial({
+      color: "#263441", metalness: 0.72, roughness: 0.32
+    });
+    const edge = new THREE.MeshStandardMaterial({
+      color: "#758897", metalness: 0.78, roughness: 0.28
+    });
+    const glove = new THREE.MeshStandardMaterial({
+      color: "#18232b", metalness: 0.22, roughness: 0.86
+    });
+    const glow = new THREE.MeshStandardMaterial({
+      color: this.equipment.accent,
+      emissive: this.equipment.glow,
+      emissiveIntensity: 2.1,
+      metalness: 0.22,
+      roughness: 0.24
+    });
+
+    const forearm = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.13, 0.34), shell);
+    forearm.position.set(0, -0.035, 0.02);
+    forearm.rotation.x = -0.08;
+    rig.add(forearm);
+
+    const palm = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.055, 0.18), glove);
+    palm.position.set(0, -0.105, -0.31);
+    rig.add(palm);
+
+    const fingerGeometry = new THREE.BoxGeometry(0.028, 0.032, 0.085);
+    const knuckleGeometry = new THREE.BoxGeometry(0.032, 0.016, 0.03);
+    for (const x of [-0.059, -0.02, 0.02, 0.059]) {
+      const finger = new THREE.Mesh(fingerGeometry, glove);
+      finger.position.set(x, -0.11, -0.405);
+      rig.add(finger);
+
+      const fingertip = new THREE.Mesh(new THREE.SphereGeometry(0.016, 8, 6), glove);
+      fingertip.position.set(x, -0.11, -0.452);
+      rig.add(fingertip);
+
+      const knuckle = new THREE.Mesh(knuckleGeometry, edge);
+      knuckle.position.set(x, -0.078, -0.385);
+      rig.add(knuckle);
+    }
+
+    const thumb = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.034, 0.09), glove);
+    thumb.position.set(0.105, -0.105, -0.305);
+    thumb.rotation.y = -0.48;
+    rig.add(thumb);
+
+    const topPlate = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.035, 0.22), edge);
+    topPlate.position.set(0, 0.045, -0.005);
+    rig.add(topPlate);
+
+    const outerRing = new THREE.Mesh(new THREE.TorusGeometry(0.105, 0.021, 10, 32), edge);
+    outerRing.position.set(0, 0.035, -0.2);
+    rig.add(outerRing);
+
+    const innerRing = new THREE.Mesh(new THREE.TorusGeometry(0.073, 0.012, 8, 28), glow);
+    innerRing.position.set(0, 0.035, -0.205);
+    rig.add(innerRing);
+
+    const energyCore = new THREE.Mesh(new THREE.IcosahedronGeometry(0.052, 1), glow);
+    energyCore.position.set(0, 0.035, -0.21);
+    rig.add(energyCore);
+
+    const sideA = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.055, 0.19), edge);
+    sideA.position.set(-0.105, 0, -0.015);
+    const sideB = sideA.clone();
+    sideB.position.x = 0.105;
+    rig.add(sideA, sideB);
+
+    const indicator = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.012, 0.075), glow);
+    indicator.position.set(0, 0.07, 0.06);
+    rig.add(indicator);
+
+    rig.userData.core = energyCore;
+    rig.userData.glow = glow;
+    return rig;
   }
 
   private spawnTargets(bounds: { width: number; depth: number }) {
     const targetZ = -bounds.depth / 2 + 14;
     const lane = bounds.width * 0.22;
     const positions = [-lane, -lane * 0.52, 0, lane * 0.52, lane];
-    for (const x of positions) this.createTarget(x, 1.45, targetZ);
+    for (const x of positions) this.createTarget(x, 1.55, targetZ);
   }
 
   private createTarget(x: number, y: number, z: number) {
+    // Floating training drones replace the temporary humanoid-shaped test dummies.
     const group = new THREE.Group();
-    const body = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.48, 0.48, 1.35, 20),
-      new THREE.MeshStandardMaterial({ color: '#c94b59', roughness: 0.48, metalness: 0.2 }),
-    );
-    body.position.y = 0.68;
-    body.castShadow = true;
-    const head = new THREE.Mesh(
-      new THREE.SphereGeometry(0.34, 18, 14),
-      new THREE.MeshStandardMaterial({ color: '#e3e9f0', roughness: 0.55 }),
-    );
-    head.position.y = 1.58;
-    head.castShadow = true;
-    const base = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.62, 0.72, 0.16, 20),
-      new THREE.MeshStandardMaterial({ color: '#657487', metalness: 0.55, roughness: 0.45 }),
-    );
-    base.position.y = 0.08;
-    group.add(body, head, base);
-    group.position.set(x, y - 1.45, z);
+    const bodyMaterial = new THREE.MeshStandardMaterial({
+      color: "#9aabb9", metalness: 0.66, roughness: 0.28
+    });
+    const darkMaterial = new THREE.MeshStandardMaterial({
+      color: "#263542", metalness: 0.58, roughness: 0.34
+    });
+    const coreMaterial = new THREE.MeshStandardMaterial({
+      color: "#a8f3ff", emissive: "#168ba6", emissiveIntensity: 2.1,
+      metalness: 0.18, roughness: 0.2
+    });
+
+    const core = new THREE.Mesh(new THREE.IcosahedronGeometry(0.39, 1), bodyMaterial);
+    core.castShadow = true;
+    const innerCore = new THREE.Mesh(new THREE.SphereGeometry(0.16, 18, 14), coreMaterial);
+    innerCore.position.z = 0.04;
+
+    const ringA = new THREE.Mesh(new THREE.TorusGeometry(0.58, 0.045, 10, 36), darkMaterial);
+    ringA.rotation.x = Math.PI / 2.5;
+    const ringB = new THREE.Mesh(new THREE.TorusGeometry(0.73, 0.025, 8, 36), coreMaterial);
+    ringB.rotation.y = Math.PI / 2;
+    ringB.rotation.x = 0.4;
+
+    const finGeometry = new THREE.OctahedronGeometry(0.18, 0);
+    const finLeft = new THREE.Mesh(finGeometry, bodyMaterial);
+    finLeft.position.set(-0.66, 0, 0);
+    const finRight = new THREE.Mesh(finGeometry, bodyMaterial);
+    finRight.position.set(0.66, 0, 0);
+
+    group.add(core, innerCore, ringA, ringB, finLeft, finRight);
+    group.position.set(x, y, z);
     group.userData.active = true;
-    group.userData.spawn = { x, z };
-    group.traverse((object) => { if (object instanceof THREE.Mesh) object.userData.target = group; });
+    group.userData.spawn = { x, y, z };
+    group.userData.baseY = y;
+    group.traverse((object) => {
+      if (object instanceof THREE.Mesh) {
+        object.castShadow = true;
+        object.userData.target = group;
+      }
+    });
     this.scene.add(group);
     this.targets.push(group);
   }
@@ -119,7 +251,7 @@ export class Game {
       this.sessionStartedAt = performance.now();
     }
     this.renderer.domElement.requestPointerLock();
-    this.options.onMessage('Training session started');
+    this.options.onMessage("Training session started");
   }
 
   private pointerLockChanged = () => {
@@ -134,24 +266,31 @@ export class Game {
       if (!this.pausedAt) this.pausedAt = performance.now();
       this.onPause?.();
     }
-    this.updateHud(document.pointerLockElement ? 'READY' : 'PAUSED');
+    this.updateHud(document.pointerLockElement ? "READY" : "PAUSED");
   };
 
   private shoot() {
-    if (!this.started || document.pointerLockElement !== this.renderer.domElement || this.reloading) return;
+    if (!this.started || document.pointerLockElement !== this.renderer.domElement || this.recharging) return;
     const now = performance.now();
-    if (now - this.lastShot < 115) return;
+    if (now - this.lastShot < this.equipment.pulseCooldownMs) return;
     this.lastShot = now;
+
     if (this.ammo <= 0) {
-      this.options.onMessage('Magazine empty — press R to reload');
+      this.options.onMessage("ENERGY DEPLETED — PRESS R TO RECHARGE");
+      this.updateHud("EMPTY");
       return;
     }
+
     this.ammo--;
     this.shotsFired++;
-    this.updateHud(this.ammo === 0 ? 'EMPTY' : 'FIRING');
     this.raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
-    const objects = this.targets.filter((target) => target.userData.active).flatMap((target) => target.children);
-    const hit = this.raycaster.intersectObjects(objects, false)[0];
+    const activeTargets = this.targets.filter((target) => target.userData.active);
+    const hit = this.raycaster.intersectObjects(activeTargets, true)[0];
+    const direction = new THREE.Vector3();
+    this.camera.getWorldDirection(direction);
+    const endpoint = hit?.point ?? this.camera.position.clone().add(direction.multiplyScalar(38));
+    this.createPulseEffect(endpoint);
+
     if (hit) {
       const target = hit.object.userData.target as THREE.Group | undefined;
       if (target?.userData.active) {
@@ -160,36 +299,98 @@ export class Game {
         this.hits++;
         this.score += 100;
         this.options.onHit();
-        this.updateHud('HIT CONFIRMED');
-        window.setTimeout(() => this.respawnTarget(target), 1800);
+        this.updateHud("PULSE CONFIRMED");
+        window.setTimeout(() => this.respawnTarget(target), 1550);
+        return;
       }
     }
+    this.updateHud(this.ammo === 0 ? "EMPTY" : "READY");
+  }
+
+  private createPulseEffect(endpoint: THREE.Vector3) {
+    const group = new THREE.Group();
+    this.camera.updateMatrixWorld();
+    const origin = this.pulseRig.localToWorld(new THREE.Vector3(0, 0.035, -0.27));
+    const beamMaterial = new THREE.LineBasicMaterial({
+      color: this.equipment.accent, transparent: true, opacity: 0.92,
+      blending: THREE.AdditiveBlending, depthWrite: false
+    });
+    const beam = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([origin, endpoint]),
+      beamMaterial
+    );
+    group.add(beam);
+
+    const flashMaterial = new THREE.MeshBasicMaterial({
+      color: this.equipment.accent,
+      transparent: true,
+      opacity: 0.9,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+    const flash = new THREE.Mesh(new THREE.SphereGeometry(0.075, 10, 8), flashMaterial);
+    flash.position.copy(endpoint);
+    group.add(flash);
+
+    this.scene.add(group);
+    this.pulseEffects.push({ group, expiresAt: performance.now() + 105 });
   }
 
   private respawnTarget(target: THREE.Group) {
     if (!this.started) return;
-    const spawn = target.userData.spawn as { x: number; z: number };
-    target.position.set(spawn.x, 0, spawn.z);
+    const spawn = target.userData.spawn as { x: number; y: number; z: number };
+    target.position.set(spawn.x, spawn.y, spawn.z);
     target.visible = true;
     target.userData.active = true;
   }
 
-  private reload() {
-    if (!this.started || document.pointerLockElement !== this.renderer.domElement || this.reloading || this.ammo === 30 || this.reserve <= 0) return;
-    this.reloading = true;
-    this.updateHud('RELOADING');
+  private recharge() {
+    if (!this.started || document.pointerLockElement !== this.renderer.domElement ||
+      this.recharging || this.ammo === this.equipment.capacity || this.reserve <= 0) return;
+
+    this.recharging = true;
+    this.updateHud("RECHARGING");
     window.setTimeout(() => {
-      const amount = Math.min(30 - this.ammo, this.reserve);
+      if (!this.started) return;
+      const amount = Math.min(this.equipment.capacity - this.ammo, this.reserve);
       this.ammo += amount;
       this.reserve -= amount;
-      this.reloading = false;
-      this.updateHud('READY');
-    }, 1250);
+      this.recharging = false;
+      this.updateHud("READY");
+    }, this.equipment.rechargeMs);
+  }
+
+  private updatePulseEffects(now: number) {
+    for (let index = this.pulseEffects.length - 1; index >= 0; index--) {
+      const effect = this.pulseEffects[index];
+      const remaining = effect.expiresAt - now;
+      if (remaining <= 0) {
+        this.scene.remove(effect.group);
+        effect.group.traverse((object) => {
+          if (object instanceof THREE.Mesh || object instanceof THREE.Line) {
+            object.geometry.dispose();
+            const list = Array.isArray(object.material) ? object.material : [object.material];
+            list.forEach((item) => item.dispose());
+          }
+        });
+        this.pulseEffects.splice(index, 1);
+      } else {
+        const opacity = Math.min(1, remaining / 105);
+        effect.group.traverse((object) => {
+          if (object instanceof THREE.Mesh || object instanceof THREE.Line) {
+            const list = Array.isArray(object.material) ? object.material : [object.material];
+            list.forEach((item) => {
+              if ("opacity" in item) item.opacity = opacity;
+            });
+          }
+        });
+      }
+    }
   }
 
   private formatTime(milliseconds: number) {
     const seconds = Math.floor(milliseconds / 1000);
-    return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+    return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
   }
 
   private updateHud(status: string) {
@@ -204,6 +405,7 @@ export class Game {
       status,
       accuracy,
       elapsed: this.formatTime(elapsed),
+      equipment: this.equipment.name
     });
   }
 
@@ -218,21 +420,74 @@ export class Game {
   private animate = () => {
     this.animation = requestAnimationFrame(this.animate);
     const delta = Math.min(this.clock.getDelta(), 0.05);
-    if (document.pointerLockElement === this.renderer.domElement) this.controller.update(delta);
-    if (this.started && performance.now() - this.lastHudUpdate > 500) {
-      this.lastHudUpdate = performance.now();
-      this.updateHud(document.pointerLockElement ? 'READY' : 'PAUSED');
+    const now = performance.now();
+
+    if (document.pointerLockElement === this.renderer.domElement) {
+      this.controller.update(delta);
+      const movement = this.controller.motionAmount;
+      this.pulseRig.position.y = -0.29 + Math.sin(now * 0.009) * 0.008 * movement;
+      this.pulseRig.position.x = 0.34 + Math.cos(now * 0.006) * 0.006 * movement;
+      const core = this.pulseRig.userData.core as THREE.Mesh;
+      core.rotation.y += delta * 1.8;
+    }
+
+    for (const target of this.targets) {
+      if (!target.userData.active) continue;
+      const baseY = target.userData.baseY as number;
+      target.position.y = baseY + Math.sin(now * 0.0018 + target.position.x) * 0.11;
+      target.rotation.y += delta * 0.52;
+      const ring = target.children[2];
+      if (ring) ring.rotation.z += delta * 0.65;
+    }
+
+    this.updatePulseEffects(now);
+    if (this.started && now - this.lastHudUpdate > 500) {
+      this.lastHudUpdate = now;
+      this.updateHud(document.pointerLockElement ? "READY" : "PAUSED");
     }
     this.renderer.render(this.scene, this.camera);
   };
 
   dispose() {
+    this.started = false;
     cancelAnimationFrame(this.animation);
     this.controller.dispose();
-    window.removeEventListener('resize', this.resize);
-    window.removeEventListener('mousedown', this.onFire);
-    window.removeEventListener('keydown', this.onKey);
-    document.removeEventListener('pointerlockchange', this.pointerLockChanged);
+    this.physics.dispose();
+    window.removeEventListener("resize", this.resize);
+    window.removeEventListener("mousedown", this.onFire);
+    window.removeEventListener("keydown", this.onKey);
+    document.removeEventListener("pointerlockchange", this.pointerLockChanged);
+
+    this.camera.remove(this.pulseRig);
+    this.pulseRig.traverse((object) => {
+      if (object instanceof THREE.Mesh) {
+        object.geometry.dispose();
+        const list = Array.isArray(object.material) ? object.material : [object.material];
+        list.forEach((item) => item.dispose());
+      }
+    });
+
+    for (const target of this.targets) {
+      this.scene.remove(target);
+      target.traverse((object) => {
+        if (object instanceof THREE.Mesh) {
+          object.geometry.dispose();
+          const list = Array.isArray(object.material) ? object.material : [object.material];
+          list.forEach((item) => item.dispose());
+        }
+      });
+    }
+    for (const effect of this.pulseEffects) {
+      this.scene.remove(effect.group);
+      effect.group.traverse((object) => {
+        if (object instanceof THREE.Mesh || object instanceof THREE.Line) {
+          object.geometry.dispose();
+          const list = Array.isArray(object.material) ? object.material : [object.material];
+          list.forEach((item) => item.dispose());
+        }
+      });
+    }
+
     this.arena.dispose();
     this.renderer.dispose();
   }
