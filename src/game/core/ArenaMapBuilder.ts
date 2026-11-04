@@ -126,6 +126,21 @@ export function buildArenaMap(scene: THREE.Scene, mapId: string): BuiltArena {
     add(light);
   };
 
+  const addCylinderColumn = (
+    x: number, y: number, z: number,
+    radius: number, height: number,
+    surface: THREE.Material
+  ) => {
+    const mesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(radius, radius, height, 18),
+      surface
+    );
+    mesh.position.set(x, y, z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    add(mesh);
+  };
+
   const halfWidth = definition.bounds.width / 2;
   const halfDepth = definition.bounds.depth / 2;
   const wallHeight = 8;
@@ -257,6 +272,119 @@ export function buildArenaMap(scene: THREE.Scene, mapId: string): BuiltArena {
     for (let index = 0; index < 7; index++) {
       const z = -halfDepth + 7 + index * ((definition.bounds.depth - 14) / 6);
       addBox(x, 0.05, z, 0.12, 0.035, 1.35, glowMaterial, false);
+    }
+  }
+
+  const addPipe = (
+    from: THREE.Vector3,
+    to: THREE.Vector3,
+    radius: number,
+    surface: THREE.Material
+  ) => {
+    const direction = new THREE.Vector3().subVectors(to, from);
+    const length = direction.length();
+    const mesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(radius, radius, length, 14, 1, false),
+      surface
+    );
+    mesh.position.copy(from).add(to).multiplyScalar(0.5);
+    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    add(mesh);
+  };
+
+  // Each location gets its own large-scale landmarks, rather than only a palette swap.
+  if (mapId === "foundry") {
+    // Industrial steam lines, pressure conduits and service gantries.
+    for (const side of [-1, 1]) {
+      const x = side * (halfWidth - 4.6);
+      addPipe(
+        new THREE.Vector3(x, 5.1, -halfDepth + 8),
+        new THREE.Vector3(x, 5.1, halfDepth - 8),
+        0.26,
+        metal
+      );
+      addPipe(
+        new THREE.Vector3(x - side * 0.58, 4.35, -halfDepth + 8),
+        new THREE.Vector3(x - side * 0.58, 4.35, halfDepth - 8),
+        0.105,
+        glowMaterial
+      );
+      for (const z of [-halfDepth + 10, -10, 10, halfDepth - 10]) {
+        addBox(x, 2.45, z, 0.62, 4.9, 0.62, darkMetal);
+        addBox(x, 4.95, z, 0.9, 0.14, 0.9, trim);
+      }
+    }
+
+    for (const x of [-18, 0, 18]) {
+      addBox(x, 6.35, -halfDepth + 7, 3.8, 0.35, 0.7, darkMetal);
+      addBox(x, 6.58, -halfDepth + 7, 2.7, 0.055, 0.16, glowMaterial, false);
+      addPointLight(x, 5.85, -halfDepth + 7, 0.8, 14);
+    }
+
+    // Exhaust housings sit above the outer service bays.
+    for (const x of [-halfWidth + 10, halfWidth - 10]) {
+      for (const z of [-halfDepth + 11, halfDepth - 11]) {
+        addBox(x, 2.2, z, 3.6, 4.4, 3.6, darkMetal);
+        addBox(x, 4.48, z, 4.0, 0.18, 4.0, trim);
+        addCylinderColumn(x, 4.7, z, 0.95, 1.1, glowMaterial);
+      }
+    }
+  } else if (mapId === "district") {
+    // Repeated shopfronts and apartment windows create an urban street block.
+    for (const side of [-1, 1]) {
+      const z = side * (halfDepth - 1.15);
+      for (let x = -halfWidth + 9; x <= halfWidth - 9; x += 13) {
+        addBox(x, 3.05, z, 7.2, 5.8, 0.34, darkMetal);
+        addBox(x, 0.62, z - side * 0.28, 7.6, 0.18, 0.72, concrete);
+        addBox(x, 5.72, z - side * 0.24, 7.6, 0.24, 0.62, trim);
+        for (const windowX of [x - 2.15, x, x + 2.15]) {
+          addBox(windowX, 3.65, z - side * 0.2, 1.55, 1.65, 0.08, metal, false);
+          addBox(windowX, 3.65, z - side * 0.26, 1.3, 1.38, 0.055, glowMaterial, false);
+          addBox(windowX, 2.45, z - side * 0.2, 1.68, 0.12, 0.16, trim, false);
+        }
+        addBox(x, 1.55, z - side * 0.3, 5.8, 0.12, 0.28, accent, false);
+      }
+    }
+
+    for (const side of [-1, 1]) {
+      const x = side * (halfWidth - 1.2);
+      for (const z of [-halfDepth + 10, -8, 8, halfDepth - 10]) {
+        addCylinderColumn(x, 2.6, z, 0.095, 5.2, trim);
+        addBox(x - side * 0.1, 5.28, z, 0.52, 0.13, 0.9, glowMaterial, false);
+        addPointLight(x - side * 0.65, 4.9, z, 0.6, 11);
+      }
+    }
+
+    // Rooftop air-conditioning units and service ducts break up the skyline.
+    for (const x of [-halfWidth + 13, 0, halfWidth - 13]) {
+      addBox(x, 6.45, -halfDepth + 3.2, 3.3, 0.72, 1.1, metal);
+      addBox(x, 6.84, -halfDepth + 3.2, 2.6, 0.08, 0.68, trim);
+      addBox(x, 6.45, halfDepth - 3.2, 3.3, 0.72, 1.1, metal);
+    }
+  } else if (mapId === "overpass") {
+    // An elevated transit deck defines the overpass while leaving a clear lower route.
+    const deckWidth = definition.bounds.width - 8;
+    addBox(0, 5.55, 0, deckWidth, 0.48, 7.2, darkMetal);
+    addBox(0, 5.82, -3.48, deckWidth, 0.42, 0.2, trim);
+    addBox(0, 5.82, 3.48, deckWidth, 0.42, 0.2, trim);
+    addBox(0, 5.82, 0, 0.14, 0.018, 6.5, stripeMaterial, false);
+
+    for (let x = -deckWidth / 2 + 5; x <= deckWidth / 2 - 5; x += 10) {
+      addBox(x, 5.24, 0, 0.38, 0.16, 7.1, metal);
+      addBox(x, 6.14, 0, 0.08, 0.06, 6.6, glowMaterial, false);
+    }
+
+    for (const x of [-halfWidth + 8, halfWidth - 8]) {
+      addBox(x, 5.1, 0, 0.75, 0.18, 7.8, accent);
+      addBox(x, 6.05, -3.48, 0.3, 0.22, 0.32, glowMaterial, false);
+      addBox(x, 6.05, 3.48, 0.3, 0.22, 0.32, glowMaterial, false);
+    }
+
+    for (const x of [-24, -8, 8, 24]) {
+      addBox(x, 4.95, 0, 1.65, 0.08, 0.08, glowMaterial, false);
+      addPointLight(x, 4.55, 0, 0.75, 16);
     }
   }
 
