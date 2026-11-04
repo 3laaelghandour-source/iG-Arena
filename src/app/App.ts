@@ -2,6 +2,7 @@ import { Game } from "../game/Game";
 import { GAME_MODES } from "../data/gameModes";
 import { ARENA_MAPS } from "../game/core/maps";
 import { GameServiceClient, type ServiceMessage } from "../network/GameServiceClient";
+import { PlayerApiClient, type PlayerProfile, type LeaderboardEntry } from "../network/PlayerApiClient";
 
 type Screen = "home" | "play" | "armory" | "leaderboard" | "profile" | "lobby";
 type CompetitiveMode = "arena" | "deathmatch";
@@ -27,11 +28,22 @@ export class App {
   private selectedMap = "foundry";
   private readonly gameServerUrl = import.meta.env.VITE_GAME_SERVER_URL?.trim() ?? "";
   private serviceClient: GameServiceClient | null = null;
+  private readonly playerApi = import.meta.env.VITE_GAME_API_URL?.trim()
+    ? new PlayerApiClient(import.meta.env.VITE_GAME_API_URL.trim())
+    : null;
+  private profile: PlayerProfile | null = null;
+  private profileBusy = false;
+  private profileError = "";
+  private authMode: "login" | "register" = "login";
+  private leaderboard: LeaderboardEntry[] | null = null;
+  private leaderboardBusy = false;
+  private leaderboardError = "";
   private lobbyState: LobbyState | null = null;
   private game: Game | null = null;
 
   constructor(private root: HTMLElement) {
     this.render();
+    if (this.playerApi?.hasSession()) void this.refreshProfile();
     window.addEventListener("beforeunload", this.dispose);
   }
 
@@ -77,8 +89,8 @@ export class App {
       case "play": return this.renderPlay();
       case "lobby": return this.renderLobbyScreen();
       case "armory": return this.renderServicePage("armory");
-      case "leaderboard": return this.renderServicePage("leaderboard");
-      case "profile": return this.renderServicePage("profile");
+      case "leaderboard": return this.renderLeaderboardPage();
+      case "profile": return this.renderProfilePage();
       case "home":
       default: return this.renderHome();
     }
@@ -199,38 +211,172 @@ export class App {
     ].join("");
   }
 
-  private renderServicePage(page: "armory" | "leaderboard" | "profile"): string {
-    const content = {
-      armory: {
-        eyebrow: "PLAYER CUSTOMIZATION",
-        title: 'YOUR <em>LOADOUT</em>',
-        description: "The loadout system will let players manage their in-game equipment and saved presets.",
-        status: "LOADOUT SERVICE NOT CONNECTED",
-        detail: "No saved equipment or player inventory is being simulated in this build."
-      },
-      leaderboard: {
-        eyebrow: "COMPETITIVE PROGRESSION",
-        title: 'THE <em>RANKINGS</em>',
-        description: "Leaderboards will track match results, placements and player progression.",
-        status: "ONLINE MATCH DATA REQUIRED",
-        detail: "Rankings will appear after player accounts and persistent match records are implemented."
-      },
-      profile: {
-        eyebrow: "PLAYER IDENTITY",
-        title: 'PLAYER <em>PROFILE</em>',
-        description: "Your profile will collect your player identity, match history and long-term statistics.",
-        status: "ACCOUNT SYSTEM NOT CONNECTED",
-        detail: "This local build does not create accounts or store personal player profiles."
-      }
-    }[page];
+  private escapeHtml(value: string): string {
+    return value.replace(/[&<>"']/g, (character) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    })[character] ?? character);
+  }
+
+  private renderProfilePage(): string {
+    if (!this.playerApi) {
+      return [
+        '<section class="service-page"><div class="eyebrow"><span></span> PLAYER IDENTITY</div>',
+        '<h1>PLAYER <em>PROFILE</em></h1>',
+        '<p class="service-description">The account service URL has not been configured for this web build.</p>',
+        '<div class="service-state"><span class="state-line"></span><div><strong>PROFILE API NOT CONFIGURED</strong><p>Set VITE_GAME_API_URL to the deployed game-service HTTP address.</p></div></div>',
+        '</section>'
+      ].join("");
+    }
+
+    if (this.profileBusy) {
+      return '<section class="account-page"><div class="eyebrow"><span></span> PLAYER IDENTITY</div><div class="account-loading">LOADING PLAYER PROFILE…</div></section>';
+    }
+
+    if (this.profile) {
+      const stats = this.profile.stats;
+      return [
+        '<section class="account-page">',
+        '<div class="eyebrow"><span></span> PLAYER IDENTITY · SAVED PROFILE</div>',
+        '<div class="account-heading"><div><h1>PLAYER <em>PROFILE</em></h1><p>Welcome back, ' + this.escapeHtml(this.profile.username) + '.</p></div><button class="button button-secondary" data-action="profile-logout">SIGN OUT</button></div>',
+        '<div class="account-profile-card"><div class="account-avatar">' + this.escapeHtml(this.profile.username.slice(0, 1).toUpperCase()) + '</div><div><span class="account-label">PLAYER NAME</span><strong>' + this.escapeHtml(this.profile.username) + '</strong><small>MEMBER SINCE ' + this.escapeHtml(new Date(this.profile.createdAt).toLocaleDateString()) + '</small></div><span class="account-tag">iG PLAYER</span></div>',
+        '<div class="account-stats-grid">',
+        this.renderAccountStat("TOTAL MATCHES", stats.matchesPlayed),
+        this.renderAccountStat("WINS", stats.wins),
+        this.renderAccountStat("POINTS", stats.points),
+        this.renderAccountStat("XP", stats.xp),
+        '</div>',
+        '<p class="account-footnote">Your profile is saved on the game service. Competitive statistics will populate when live match results are connected.</p>',
+        '</section>'
+      ].join("");
+    }
+
+    const error = this.profileError ? '<p class="auth-error">' + this.escapeHtml(this.profileError) + '</p>' : "";
+    const isRegister = this.authMode === "register";
+    return [
+      '<section class="account-page">',
+      '<div class="eyebrow"><span></span> PLAYER IDENTITY</div>',
+      '<div class="account-heading"><div><h1>PLAYER <em>PROFILE</em></h1><p>Create your iG account or sign in to continue.</p></div></div>',
+      '<div class="auth-card">',
+      '<div class="auth-card-heading"><span>iG ACCOUNT</span><strong>' + (isRegister ? "CREATE ACCOUNT" : "WELCOME BACK") + '</strong><p>' + (isRegister ? "Choose a player name and password." : "Sign in to load your saved player profile.") + '</p></div>',
+      error,
+      '<form id="profile-auth-form" class="auth-form">',
+      '<label>PLAYER NAME<input name="username" type="text" minlength="3" maxlength="16" pattern="[A-Za-z0-9_]+" autocomplete="username" required placeholder="YourPlayerName" /></label>',
+      '<label>PASSWORD<input name="password" type="password" minlength="8" maxlength="128" autocomplete="' + (isRegister ? "new-password" : "current-password") + '" required placeholder="At least 8 characters" /></label>',
+      '<button class="button button-primary" type="submit">' + (isRegister ? "CREATE PLAYER ACCOUNT" : "SIGN IN") + '<span>→</span></button>',
+      '</form>',
+      '<button class="auth-switch" data-action="toggle-auth">' + (isRegister ? "ALREADY HAVE AN ACCOUNT? SIGN IN" : "NEW TO iG ARENA? CREATE AN ACCOUNT") + '</button>',
+      '<p class="auth-policy">Username: 3–16 letters, numbers or underscores. No email or phone number is required.</p>',
+      '</div>',
+      '</section>'
+    ].join("");
+  }
+
+  private renderAccountStat(label: string, value: number): string {
+    return '<div class="account-stat"><span>' + label + '</span><strong>' + value.toLocaleString() + '</strong></div>';
+  }
+
+  private renderLeaderboardPage(): string {
+    if (!this.playerApi) {
+      return '<section class="service-page"><div class="eyebrow"><span></span> COMPETITIVE PROGRESSION</div><h1>THE <em>RANKINGS</em></h1><div class="service-state"><span class="state-line"></span><div><strong>RANKING API NOT CONFIGURED</strong><p>Set VITE_GAME_API_URL to the deployed game-service HTTP address.</p></div></div></section>';
+    }
+
+    const rows = (this.leaderboard ?? []).map((entry) =>
+      '<div class="leaderboard-row"><span class="leaderboard-rank">#' + entry.rank + '</span><strong>' + this.escapeHtml(entry.username) + '</strong><span>' + entry.stats.wins + ' WINS</span><b>' + entry.stats.xp.toLocaleString() + ' XP</b></div>'
+    ).join("");
 
     return [
+      '<section class="account-page leaderboard-page">',
+      '<div class="eyebrow"><span></span> COMPETITIVE PROGRESSION</div>',
+      '<div class="account-heading"><div><h1>THE <em>RANKINGS</em></h1><p>Player standings from saved game-service profiles.</p></div><button class="button button-secondary" data-action="refresh-leaderboard">REFRESH</button></div>',
+      this.leaderboardBusy ? '<div class="account-loading">UPDATING RANKINGS…</div>' :
+        this.leaderboardError ? '<div class="service-state"><span class="state-line"></span><div><strong>RANKINGS UNAVAILABLE</strong><p>' + this.escapeHtml(this.leaderboardError) + '</p></div></div>' :
+        this.leaderboard?.length
+          ? '<div class="leaderboard-table"><div class="leaderboard-header"><span>RANK</span><span>PLAYER</span><span>WINS</span><span>EXPERIENCE</span></div>' + rows + '</div>'
+          : '<div class="leaderboard-empty"><strong>NO MATCH RESULTS YET</strong><p>Player accounts are ready. Rankings will fill when the live match system starts recording results.</p></div>',
+      '<p class="account-footnote">The ranking API is connected, but live match results are not yet linked to player profiles.</p>',
+      '</section>'
+    ].join("");
+  }
+
+  private async refreshProfile(): Promise<void> {
+    if (!this.playerApi?.hasSession()) return;
+    this.profileBusy = true;
+    this.profileError = "";
+    if (this.screen === "profile") this.render();
+    try {
+      this.profile = await this.playerApi.getMe();
+    } catch {
+      this.profile = null;
+      this.profileError = "Your saved session has expired. Sign in again.";
+    } finally {
+      this.profileBusy = false;
+      if (this.screen === "profile") this.render();
+    }
+  }
+
+  private async submitAuth(username: string, password: string): Promise<void> {
+    if (!this.playerApi) return;
+    this.profileBusy = true;
+    this.profileError = "";
+    this.render();
+    try {
+      this.profile = this.authMode === "register"
+        ? await this.playerApi.register(username, password)
+        : await this.playerApi.login(username, password);
+      this.profileError = "";
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "request-failed";
+      const messages: Record<string, string> = {
+        "username-taken": "That player name is already in use.",
+        "invalid-username": "Use 3–16 letters, numbers or underscores.",
+        "invalid-password": "Password must be between 8 and 128 characters.",
+        "invalid-credentials": "Player name or password is incorrect.",
+        "auth-rate-limit": "Too many attempts. Try again later.",
+        "network-error": "Could not reach the game service."
+      };
+      this.profileError = messages[code] ?? "Account request failed. Check the game service and try again.";
+    } finally {
+      this.profileBusy = false;
+      this.render();
+    }
+  }
+
+  private async logoutProfile(): Promise<void> {
+    if (!this.playerApi) return;
+    this.profileBusy = true;
+    this.render();
+    try {
+      await this.playerApi.logout();
+    } finally {
+      this.profile = null;
+      this.profileBusy = false;
+      this.render();
+    }
+  }
+
+  private async refreshLeaderboard(): Promise<void> {
+    if (!this.playerApi) return;
+    this.leaderboardBusy = true;
+    this.leaderboardError = "";
+    this.render();
+    try {
+      this.leaderboard = await this.playerApi.getLeaderboard();
+    } catch {
+      this.leaderboardError = "Could not load rankings from the game service.";
+    } finally {
+      this.leaderboardBusy = false;
+      if (this.screen === "leaderboard") this.render();
+    }
+  }
+
+  private renderServicePage(_page: "armory"): string {
+    return [
       '<section class="service-page">',
-      '<div class="service-page-mark">' + (page === "armory" ? "02" : page === "leaderboard" ? "03" : "04") + '</div>',
-      '<div class="eyebrow"><span></span> ' + content.eyebrow + '</div>',
-      '<h1>' + content.title + '</h1>',
-      '<p class="service-description">' + content.description + '</p>',
-      '<div class="service-state"><span class="state-line"></span><div><strong>' + content.status + '</strong><p>' + content.detail + '</p></div></div>',
+      '<div class="service-page-mark">02</div>',
+      '<div class="eyebrow"><span></span> PLAYER CUSTOMIZATION</div>',
+      '<h1>YOUR <em>LOADOUT</em></h1>',
+      '<p class="service-description">Player presets and saved customization will be available in a later game update.</p>',
+      '<div class="service-state"><span class="state-line"></span><div><strong>CUSTOMIZATION SERVICE NOT CONNECTED</strong><p>This section is reserved for future player settings. No inventory or equipment is being stored yet.</p></div></div>',
       '<button class="button button-secondary" data-screen="play">BACK TO GAME MODES <span>→</span></button>',
       '</section>'
     ].join("");
@@ -243,6 +389,8 @@ export class App {
         if (!screen) return;
         this.screen = screen;
         this.render();
+        if (screen === "profile") void this.refreshProfile();
+        if (screen === "leaderboard") void this.refreshLeaderboard();
       });
     });
 
@@ -269,6 +417,28 @@ export class App {
     this.root.querySelector('[data-action="cancel-lobby"]')?.addEventListener("click", () => this.cancelLobby());
     this.root.querySelector('[data-action="room-ready"]')?.addEventListener("click", () => {
       this.serviceClient?.send({ type: "room.ready" });
+    });
+
+    this.root.querySelector<HTMLFormElement>("#profile-auth-form")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const form = event.currentTarget as HTMLFormElement;
+      const username = (form.elements.namedItem("username") as HTMLInputElement | null)?.value ?? "";
+      const password = (form.elements.namedItem("password") as HTMLInputElement | null)?.value ?? "";
+      void this.submitAuth(username, password);
+    });
+
+    this.root.querySelector('[data-action="toggle-auth"]')?.addEventListener("click", () => {
+      this.authMode = this.authMode === "login" ? "register" : "login";
+      this.profileError = "";
+      this.render();
+    });
+
+    this.root.querySelector('[data-action="profile-logout"]')?.addEventListener("click", () => {
+      void this.logoutProfile();
+    });
+
+    this.root.querySelector('[data-action="refresh-leaderboard"]')?.addEventListener("click", () => {
+      void this.refreshLeaderboard();
     });
   }
 

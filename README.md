@@ -11,12 +11,13 @@ iG Arena is an independent browser-based 3D arena game built with Three.js, Type
 - Renderer-independent match rules for team rounds, free-for-all scoring, countdowns, round breaks and match results.
 - A Node.js WebSocket service for temporary guest sessions, queues, balanced teams and staging-room readiness.
 - Browser-side queue and lobby integration when the game-service URL is configured.
+- Player accounts with scrypt password hashing, seven-day sessions, saved profiles and a public XP leaderboard.
 
 ## What is playable today
 
 Training is the only playable 3D mode in the browser client. It is a local session. Arena and Deathmatch can connect to the staging queue when the WebSocket service is configured, but room readiness is not the same as a live match. There is no network-replicated 3D gameplay yet.
 
-Loadout, profile and rankings are currently informational sections. Accounts and persistent player data are not implemented.
+Player profiles and account authentication are implemented. Rankings read from the game-service leaderboard API, but will remain empty until live match results are connected. Loadout is still an informational section.
 
 ## Technology
 
@@ -58,6 +59,8 @@ Run npm run build, then npm run preview.
 - src/game/PlayerController.ts — local movement and camera controls.
 - src/game/core/ — map definitions, map builder and renderer-independent match rules.
 - src/network/GameServiceClient.ts — browser WebSocket client.
+- src/network/PlayerApiClient.ts — account, profile and leaderboard API client.
+- server/src/playerStore.js — persistent player accounts, sessions and stats.
 - server/src/ — guest sessions, matchmaking queues and staging rooms.
 - server/test/ — game-service protocol tests.
 - docs/gameplay-foundation.md — gameplay architecture notes.
