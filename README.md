@@ -41,6 +41,8 @@ Run npm run build, then npm run preview.
 
 The WebSocket staging service is a separate Node.js app under server/. From that directory, run npm install, npm test and npm start. Set ALLOWED_ORIGINS to the exact deployed frontend origin when running in production. The service exposes /healthz and /ws.
 
+The browser can connect to the staging service when VITE_GAME_SERVER_URL is configured. Copy .env.example to .env and set the WebSocket endpoint. The Play screen then exposes Arena and Deathmatch queue buttons and a ready-room lobby.
+
 The service currently manages guest queues and room readiness only. It does not yet replicate the 3D world or start a live online match.
 
 ## Roadmap
@@ -56,6 +58,7 @@ The service currently manages guest queues and room readiness only. It does not 
 - src/app/App.ts — screen flow and game shell.
 - src/data/gameModes.ts — mode definitions and availability.
 - src/game/Game.ts — current local training scene.
+- src/network/GameServiceClient.ts — browser WebSocket client for online staging.
 - src/game/core/maps.ts — arena map catalog and spawn data.
 - src/game/core/ArenaMapBuilder.ts — Three.js blockout map builder.
 - src/game/core/MatchEngine.ts — independent match and round rules.

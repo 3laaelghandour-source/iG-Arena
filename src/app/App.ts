@@ -1,12 +1,33 @@
 import { Game } from "../game/Game";
 import { GAME_MODES } from "../data/gameModes";
 import { ARENA_MAPS } from "../game/core/maps";
+import { GameServiceClient, type ServiceMessage } from "../network/GameServiceClient";
 
-type Screen = "home" | "play" | "armory" | "leaderboard" | "profile";
+type Screen = "home" | "play" | "armory" | "leaderboard" | "profile" | "lobby";
+type CompetitiveMode = "arena" | "deathmatch";
+type LobbyStatus = "connecting" | "queue" | "room" | "launch-ready" | "error";
+type LobbyPlayer = { id: string; displayName: string; team: "red" | "blue" | null; ready: boolean; connected: boolean };
+type LobbyState = {
+  mode: CompetitiveMode;
+  mapId: string;
+  status: LobbyStatus;
+  players: LobbyPlayer[];
+  playerId?: string;
+  displayName?: string;
+  roomId?: string;
+  position?: number;
+  playersWaiting?: number;
+  playersNeeded?: number;
+  error?: string;
+  joinSent?: boolean;
+};
 
 export class App {
   private screen: Screen = "home";
   private selectedMap = "foundry";
+  private readonly gameServerUrl = import.meta.env.VITE_GAME_SERVER_URL?.trim() ?? "";
+  private serviceClient: GameServiceClient | null = null;
+  private lobbyState: LobbyState | null = null;
   private game: Game | null = null;
 
   constructor(private root: HTMLElement) {
@@ -54,6 +75,7 @@ export class App {
   private renderScreen(): string {
     switch (this.screen) {
       case "play": return this.renderPlay();
+      case "lobby": return this.renderLobbyScreen();
       case "armory": return this.renderServicePage("armory");
       case "leaderboard": return this.renderServicePage("leaderboard");
       case "profile": return this.renderServicePage("profile");
@@ -107,14 +129,18 @@ export class App {
 
   private renderModeCard(mode: typeof GAME_MODES[number], index: number, detailed = false): string {
     const available = mode.availability === "available";
+    const queueable = !available && mode.id !== "training" && Boolean(this.gameServerUrl);
+    const statusLabel = available ? mode.status : queueable ? "STAGING QUEUE" : mode.status;
     return [
       '<article class="mode-card ' + (available ? "mode-available" : "mode-planned") + '">',
-      '<div class="mode-card-top"><span class="mode-index">0' + (index + 1) + '</span><span class="mode-status ' + (available ? "status-ready" : "status-planned") + '"><i></i>' + mode.status + '</span></div>',
+      '<div class="mode-card-top"><span class="mode-index">0' + (index + 1) + '</span><span class="mode-status ' + (available ? "status-ready" : "status-planned") + '"><i></i>' + statusLabel + '</span></div>',
       '<div class="mode-card-body"><span class="mode-category">' + mode.category + '</span><h3>' + mode.name + '</h3><p>' + mode.description + '</p></div>',
       '<div class="mode-card-bottom">',
       available
         ? '<button class="mode-action" data-action="start-training">ENTER MODE <span>↗</span></button>'
-        : '<span class="mode-locked">IN DEVELOPMENT <span>⌁</span></span>',
+        : queueable
+          ? '<button class="mode-action" data-action="queue-mode" data-mode="' + mode.id + '">FIND SESSION <span>↗</span></button>'
+          : '<span class="mode-locked">IN DEVELOPMENT <span>⌁</span></span>',
       '</div>',
       detailed && !available ? '<p class="mode-detail">' + mode.detail + '</p>' : '',
       '</article>'
@@ -131,6 +157,45 @@ export class App {
       '<span class="map-card-description">' + map.description + '</span>',
       '<span class="map-card-select">' + (selected ? "SELECTED" : "SELECT MAP") + '</span>',
       '</button>'
+    ].join("");
+  }
+
+  private renderLobbyScreen(): string {
+    const lobby = this.lobbyState;
+    if (!lobby) {
+      return '<section class="service-page"><h1>NO ACTIVE <em>SESSION</em></h1><button class="button button-secondary" data-screen="play">BACK TO PLAY</button></section>';
+    }
+
+    const mapName = ARENA_MAPS.find((map) => map.id === lobby.mapId)?.name ?? lobby.mapId.toUpperCase();
+    const players = lobby.players.map((player) => {
+      const isYou = player.id === lobby.playerId;
+      const team = player.team ? player.team.toUpperCase() : "FREE FOR ALL";
+      const readiness = player.ready ? "READY" : "NOT READY";
+      return '<div class="lobby-player"><div class="lobby-player-mark">' + player.displayName.slice(0, 1).toUpperCase() + '</div><div class="lobby-player-info"><strong>' + player.displayName + (isYou ? ' <span>YOU</span>' : '') + '</strong><small>' + team + '</small></div><span class="lobby-player-state ' + (player.ready ? "ready" : "") + '">' + readiness + '</span></div>';
+    }).join("");
+
+    let body = "";
+    if (lobby.status === "connecting") {
+      body = '<div class="lobby-status-panel"><div class="lobby-loader"></div><strong>CONNECTING TO iG SERVICE</strong><p>Opening a guest session with the game service.</p></div>';
+    } else if (lobby.status === "queue") {
+      body = '<div class="lobby-status-panel"><div class="lobby-loader"></div><strong>SEARCHING FOR PLAYERS</strong><p>Queue position: ' + (lobby.position ?? "—") + ' · Players waiting: ' + (lobby.playersWaiting ?? 0) + ' · Needed: ' + (lobby.playersNeeded ?? 0) + '</p></div><button class="button button-secondary" data-action="cancel-lobby">LEAVE QUEUE</button>';
+    } else if (lobby.status === "room" || lobby.status === "launch-ready") {
+      const ownPlayer = lobby.players.find((player) => player.id === lobby.playerId);
+      body = '<div class="lobby-roster">' + (players || '<p>Waiting for room roster…</p>') + '</div>' +
+        (lobby.status === "launch-ready"
+          ? '<div class="lobby-status-panel lobby-ready-panel"><strong>ROOM ASSEMBLED</strong><p>All players are ready. The live 3D multiplayer runtime is the next integration stage.</p></div>'
+          : '<div class="lobby-actions"><button class="button button-primary" data-action="room-ready" ' + (ownPlayer?.ready ? "disabled" : "") + '>' + (ownPlayer?.ready ? "YOU ARE READY" : "READY UP") + '</button><button class="button button-secondary" data-action="cancel-lobby">LEAVE ROOM</button></div>');
+    } else {
+      body = '<div class="lobby-status-panel lobby-error-panel"><strong>CONNECTION NOT AVAILABLE</strong><p>' + (lobby.error ?? "The game service connection was interrupted.") + '</p></div><button class="button button-secondary" data-action="cancel-lobby">BACK TO PLAY</button>';
+    }
+
+    return [
+      '<section class="lobby-page">',
+      '<div class="eyebrow"><span></span> iG ARENA · ONLINE STAGING</div>',
+      '<div class="lobby-heading"><div><h1>' + lobby.mode.toUpperCase() + ' <em>LOBBY</em></h1><p>' + mapName + ' · Temporary guest session</p></div><span class="lobby-phase">' + lobby.status.replace("-", " ").toUpperCase() + '</span></div>',
+      body,
+      '<p class="lobby-footnote">This service currently creates rooms and collects readiness only. It does not start or synchronize a live match yet.</p>',
+      '</section>'
     ].join("");
   }
 
@@ -193,6 +258,115 @@ export class App {
     this.root.querySelectorAll<HTMLElement>('[data-action="start-training"]').forEach((element) => {
       element.addEventListener("click", () => this.startTraining(this.selectedMap));
     });
+
+    this.root.querySelectorAll<HTMLElement>('[data-action="queue-mode"]').forEach((element) => {
+      element.addEventListener("click", () => {
+        const mode = element.dataset.mode;
+        if (mode === "arena" || mode === "deathmatch") void this.startQueue(mode);
+      });
+    });
+
+    this.root.querySelector('[data-action="cancel-lobby"]')?.addEventListener("click", () => this.cancelLobby());
+    this.root.querySelector('[data-action="room-ready"]')?.addEventListener("click", () => {
+      this.serviceClient?.send({ type: "room.ready" });
+    });
+  }
+
+  private async startQueue(mode: CompetitiveMode): Promise<void> {
+    if (!this.gameServerUrl) {
+      this.lobbyState = {
+        mode, mapId: this.selectedMap, status: "error", players: [],
+        error: "VITE_GAME_SERVER_URL is not configured."
+      };
+      this.screen = "lobby";
+      this.render();
+      return;
+    }
+
+    this.lobbyState = { mode, mapId: this.selectedMap, status: "connecting", players: [] };
+    this.screen = "lobby";
+    this.render();
+
+    const client = new GameServiceClient();
+    this.serviceClient = client;
+    client.onMessage((message) => this.handleServiceMessage(message));
+
+    try {
+      await client.connect(this.gameServerUrl);
+    } catch {
+      if (this.serviceClient !== client) return;
+      this.lobbyState = {
+        mode, mapId: this.selectedMap, status: "error", players: [],
+        error: "Could not connect. Check the game service URL and server status."
+      };
+      client.disconnect();
+      this.render();
+    }
+  }
+
+  private handleServiceMessage(message: ServiceMessage): void {
+    const lobby = this.lobbyState;
+    if (!lobby) return;
+
+    switch (message.type) {
+      case "server.hello":
+        lobby.playerId = typeof message.playerId === "string" ? message.playerId : undefined;
+        lobby.displayName = typeof message.displayName === "string" ? message.displayName : "Guest";
+        if (!lobby.joinSent) {
+          lobby.joinSent = true;
+          this.serviceClient?.send({
+            type: "queue.join",
+            mode: lobby.mode,
+            mapId: lobby.mapId,
+            displayName: lobby.displayName
+          });
+        }
+        break;
+      case "queue.status":
+        lobby.status = "queue";
+        lobby.position = typeof message.position === "number" ? message.position : undefined;
+        lobby.playersWaiting = typeof message.playersWaiting === "number" ? message.playersWaiting : undefined;
+        lobby.playersNeeded = typeof message.playersNeeded === "number" ? message.playersNeeded : undefined;
+        break;
+      case "match.found":
+      case "room.snapshot":
+      case "room.launch-ready":
+        lobby.roomId = typeof message.roomId === "string" ? message.roomId : lobby.roomId;
+        lobby.players = Array.isArray(message.players) ? message.players as LobbyPlayer[] : lobby.players;
+        lobby.status = message.type === "room.launch-ready" || message.phase === "launch-ready"
+          ? "launch-ready" : "room";
+        break;
+      case "room.cancelled":
+        this.serviceClient?.disconnect();
+        this.serviceClient = null;
+        this.lobbyState = null;
+        this.screen = "play";
+        this.render();
+        return;
+      case "server.error":
+        lobby.status = "error";
+        lobby.error = typeof message.code === "string" ? message.code : "Service rejected the request.";
+        break;
+      case "server.disconnected":
+        lobby.status = "error";
+        lobby.error = "The game service connection was closed.";
+        break;
+      default:
+        return;
+    }
+
+    this.render();
+  }
+
+  private cancelLobby(): void {
+    const status = this.lobbyState?.status;
+    if (status === "queue") this.serviceClient?.send({ type: "queue.leave" });
+    if (status === "room" || status === "launch-ready") this.serviceClient?.send({ type: "room.leave" });
+    this.serviceClient?.disconnect();
+    this.serviceClient = null;
+    this.lobbyState = null;
+    this.screen = "play";
+    this.render();
   }
 
   private startTraining(mapId: string = this.selectedMap): void {
@@ -288,5 +462,7 @@ export class App {
   private dispose = (): void => {
     this.game?.dispose();
     this.game = null;
+    this.serviceClient?.disconnect();
+    this.serviceClient = null;
   };
 }
