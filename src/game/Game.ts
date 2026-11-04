@@ -1,7 +1,15 @@
 import * as THREE from 'three';
 import { PlayerController } from './PlayerController';
 
-type HudState = { health: number; score: number; ammo: number; reserve: number; status: string };
+type HudState = {
+  health: number;
+  score: number;
+  ammo: number;
+  reserve: number;
+  status: string;
+  accuracy: number;
+  elapsed: string;
+};
 type GameOptions = {
   mount: HTMLElement;
   onHud: (state: HudState) => void;
@@ -21,10 +29,16 @@ export class Game {
   private reserve = 120;
   private score = 0;
   private health = 100;
+  private shotsFired = 0;
+  private hits = 0;
   private reloading = false;
   private started = false;
   private animation = 0;
   private lastShot = 0;
+  private lastHudUpdate = 0;
+  private sessionStartedAt = 0;
+  private pausedAt = 0;
+  private pausedDuration = 0;
   private onFire = (event: MouseEvent) => { if (event.button === 0) this.shoot(); };
   private onKey = (event: KeyboardEvent) => { if (event.code === 'KeyR') this.reload(); };
 
@@ -33,7 +47,7 @@ export class Game {
 
   constructor(private options: GameOptions) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -74,7 +88,7 @@ export class Game {
     const grid = new THREE.GridHelper(70, 70, '#596879', '#394654');
     grid.position.y = 0.012;
     const gridMaterials = Array.isArray(grid.material) ? grid.material : [grid.material];
-    gridMaterials.forEach((m) => { m.transparent = true; m.opacity = 0.2; });
+    gridMaterials.forEach((material) => { material.transparent = true; material.opacity = 0.2; });
     this.scene.add(grid);
 
     const wallMat = new THREE.MeshStandardMaterial({ color: '#303b49', roughness: 0.78 });
@@ -90,10 +104,8 @@ export class Game {
     addBox(-23, 3, 0, 1, 6, 46, wallMat);
     addBox(23, 3, 0, 1, 6, 46, wallMat);
     addBox(0, 3, 23, 46, 6, 1, wallMat);
-    for (let i = -2; i <= 2; i++) {
-      addBox(i * 8, 0.12, -21.35, 3.8, 0.18, 0.12, redMat);
-    }
-    // Low cover blocks create depth without obstructing the training lanes.
+    for (let i = -2; i <= 2; i++) addBox(i * 8, 0.12, -21.35, 3.8, 0.18, 0.12, redMat);
+
     for (const [x, z] of [[-9, -5], [9, -5], [-9, -14], [9, -14], [0, -10]] as number[][]) {
       addBox(x, 0.9, z, 3.4, 1.8, 2.2, wallMat);
     }
@@ -107,12 +119,11 @@ export class Game {
   }
 
   private spawnTargets() {
-    const positions = [
-      [-13, 1.45, -17], [-7, 1.45, -19], [0, 1.45, -16],
-      [7, 1.45, -19], [13, 1.45, -17], [-16, 1.45, -7],
-      [16, 1.45, -7], [-5, 1.45, -11], [5, 1.45, -11],
+    const positions: [number, number][] = [
+      [-13, -17], [-7, -19], [0, -16], [7, -19], [13, -17],
+      [-16, -7], [16, -7], [-5, -11], [5, -11],
     ];
-    for (const [x, y, z] of positions) this.createTarget(x, y, z);
+    for (const [x, z] of positions) this.createTarget(x, 1.45, z);
   }
 
   private createTarget(x: number, y: number, z: number) {
@@ -137,21 +148,34 @@ export class Game {
     group.add(body, head, base);
     group.position.set(x, y - 1.45, z);
     group.userData.active = true;
-    group.traverse((obj) => { if (obj instanceof THREE.Mesh) obj.userData.target = group; });
+    group.userData.spawn = { x, z };
+    group.traverse((object) => { if (object instanceof THREE.Mesh) object.userData.target = group; });
     this.scene.add(group);
     this.targets.push(group);
   }
 
   start() {
-    this.started = true;
+    if (!this.started) {
+      this.started = true;
+      this.sessionStartedAt = performance.now();
+    }
     this.renderer.domElement.requestPointerLock();
     this.options.onMessage('Training session started');
   }
 
   private pointerLockChanged = () => {
     if (!this.started) return;
-    if (document.pointerLockElement === this.renderer.domElement) this.onResume?.();
-    else this.onPause?.();
+    if (document.pointerLockElement === this.renderer.domElement) {
+      if (this.pausedAt) {
+        this.pausedDuration += performance.now() - this.pausedAt;
+        this.pausedAt = 0;
+      }
+      this.onResume?.();
+    } else {
+      if (!this.pausedAt) this.pausedAt = performance.now();
+      this.onPause?.();
+    }
+    this.updateHud(document.pointerLockElement ? 'READY' : 'PAUSED');
   };
 
   private shoot() {
@@ -159,17 +183,22 @@ export class Game {
     const now = performance.now();
     if (now - this.lastShot < 115) return;
     this.lastShot = now;
-    if (this.ammo <= 0) { this.options.onMessage('Magazine empty — press R to reload'); return; }
+    if (this.ammo <= 0) {
+      this.options.onMessage('Magazine empty — press R to reload');
+      return;
+    }
     this.ammo--;
+    this.shotsFired++;
     this.updateHud(this.ammo === 0 ? 'EMPTY' : 'FIRING');
     this.raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
-    const objects = this.targets.filter((t) => t.userData.active).flatMap((t) => t.children);
+    const objects = this.targets.filter((target) => target.userData.active).flatMap((target) => target.children);
     const hit = this.raycaster.intersectObjects(objects, false)[0];
     if (hit) {
       const target = hit.object.userData.target as THREE.Group | undefined;
       if (target?.userData.active) {
         target.userData.active = false;
         target.visible = false;
+        this.hits++;
         this.score += 100;
         this.options.onHit();
         this.updateHud('HIT CONFIRMED');
@@ -180,15 +209,14 @@ export class Game {
 
   private respawnTarget(target: THREE.Group) {
     if (!this.started) return;
+    const spawn = target.userData.spawn as { x: number; z: number };
+    target.position.set(spawn.x, 0, spawn.z);
     target.visible = true;
     target.userData.active = true;
-    const positions = [[-13, -17], [-7, -19], [0, -16], [7, -19], [13, -17], [-16, -7], [16, -7], [-5, -11], [5, -11]];
-    const [x, z] = positions[Math.floor(Math.random() * positions.length)];
-    target.position.set(x, 0, z);
   }
 
   private reload() {
-    if (!this.started || this.reloading || this.ammo === 30 || this.reserve <= 0) return;
+    if (!this.started || document.pointerLockElement !== this.renderer.domElement || this.reloading || this.ammo === 30 || this.reserve <= 0) return;
     this.reloading = true;
     this.updateHud('RELOADING');
     window.setTimeout(() => {
@@ -200,8 +228,24 @@ export class Game {
     }, 1250);
   }
 
+  private formatTime(milliseconds: number) {
+    const seconds = Math.floor(milliseconds / 1000);
+    return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+  }
+
   private updateHud(status: string) {
-    this.options.onHud({ health: this.health, score: this.score, ammo: this.ammo, reserve: this.reserve, status });
+    const elapsedNow = this.pausedAt || performance.now();
+    const elapsed = this.started ? elapsedNow - this.sessionStartedAt - this.pausedDuration : 0;
+    const accuracy = this.shotsFired ? Math.round((this.hits / this.shotsFired) * 100) : 100;
+    this.options.onHud({
+      health: this.health,
+      score: this.score,
+      ammo: this.ammo,
+      reserve: this.reserve,
+      status,
+      accuracy,
+      elapsed: this.formatTime(elapsed),
+    });
   }
 
   private resize = () => {
@@ -216,6 +260,10 @@ export class Game {
     this.animation = requestAnimationFrame(this.animate);
     const delta = Math.min(this.clock.getDelta(), 0.05);
     if (document.pointerLockElement === this.renderer.domElement) this.controller.update(delta);
+    if (this.started && performance.now() - this.lastHudUpdate > 500) {
+      this.lastHudUpdate = performance.now();
+      this.updateHud(document.pointerLockElement ? 'READY' : 'PAUSED');
+    }
     this.renderer.render(this.scene, this.camera);
   };
 
