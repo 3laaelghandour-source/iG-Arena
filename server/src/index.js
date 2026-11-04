@@ -1,6 +1,8 @@
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import WebSocket, { WebSocketServer } from "ws";
+import { resolve } from "node:path";
+import { PlayerStore } from "./playerStore.js";
 import {
   AVAILABLE_MAPS,
   MODE_RULES,
@@ -18,10 +20,13 @@ const allowedOrigins = new Set(
   (process.env.ALLOWED_ORIGINS ?? "").split(",").map((origin) => origin.trim()).filter(Boolean)
 );
 
+const playerStore = new PlayerStore(resolve(process.env.DATA_DIR ?? "./data", "players.json"));
+
 const sessions = new Map();
 const queues = new Map();
 const rooms = new Map();
 const activeByIp = new Map();
+const authAttempts = new Map();
 
 function send(session, type, payload = {}) {
   if (session?.socket.readyState !== WebSocket.OPEN) return;
@@ -268,22 +273,177 @@ function handleMessage(session, raw) {
   }
 }
 
-const httpServer = createServer((request, response) => {
+function isOriginAllowed(origin) {
+  if (!origin || allowedOrigins.has(origin)) return true;
+  if (process.env.NODE_ENV === "production") return false;
+  try {
+    const hostname = new URL(origin).hostname;
+    return hostname === "localhost" || hostname === "127.0.0.1";
+  } catch {
+    return false;
+  }
+}
+
+function applyCors(request, response) {
+  const origin = request.headers.origin;
+  if (!isOriginAllowed(origin)) return false;
+  if (origin) {
+    response.setHeader("Access-Control-Allow-Origin", origin);
+    response.setHeader("Vary", "Origin");
+  }
+  response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  return true;
+}
+
+function sendJson(response, statusCode, payload) {
+  response.writeHead(statusCode, {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "no-store"
+  });
+  response.end(JSON.stringify(payload));
+}
+
+function httpError(message, statusCode) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+}
+
+async function readJsonBody(request) {
+  const contentType = String(request.headers["content-type"] ?? "");
+  if (!contentType.toLowerCase().includes("application/json")) {
+    throw httpError("content-type-must-be-json", 415);
+  }
+  const declaredLength = Number(request.headers["content-length"] ?? 0);
+  if (declaredLength > 8 * 1024) throw httpError("request-too-large", 413);
+
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of request) {
+    size += chunk.length;
+    if (size > 8 * 1024) throw httpError("request-too-large", 413);
+    chunks.push(chunk);
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch {
+    throw httpError("invalid-json", 400);
+  }
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw httpError("invalid-json-object", 400);
+  }
+  return payload;
+}
+
+function getBearerToken(request) {
+  const header = String(request.headers.authorization ?? "");
+  const match = /^Bearer ([A-Za-z0-9_-]{32,128})$/.exec(header);
+  return match?.[1] ?? null;
+}
+
+function allowAuthAttempt(ip) {
+  const now = Date.now();
+  const existing = authAttempts.get(ip);
+  if (!existing || now - existing.startedAt >= 60_000) {
+    authAttempts.set(ip, { startedAt: now, count: 1 });
+    return true;
+  }
+  if (existing.count >= 10) return false;
+  existing.count += 1;
+  return true;
+}
+
+function getAuthErrorStatus(error) {
+  if (error?.statusCode) return error.statusCode;
+  if (error?.message === "username-taken") return 409;
+  if (error?.message === "invalid-credentials") return 401;
+  if (["invalid-username", "invalid-password", "invalid-outcome", "invalid-points"].includes(error?.message)) return 400;
+  if (error?.message === "player-not-found") return 404;
+  return 500;
+}
+
+async function handleHttpRequest(request, response) {
+  if (!applyCors(request, response)) {
+    sendJson(response, 403, { error: "origin-not-allowed" });
+    return;
+  }
+
+  if (request.method === "OPTIONS") {
+    response.writeHead(204);
+    response.end();
+    return;
+  }
+
   const url = new URL(request.url ?? "/", "http://localhost");
-  if (url.pathname === "/healthz") {
-    response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
-    response.end(JSON.stringify({
+  if (request.method === "GET" && url.pathname === "/healthz") {
+    sendJson(response, 200, {
       status: "ok",
       service: "ig-arena-game-service",
       connectedPlayers: sessions.size,
       activeRooms: rooms.size,
-      availableMaps: [...AVAILABLE_MAPS]
-    }));
+      availableMaps: [...AVAILABLE_MAPS],
+      playerStore: "ready"
+    });
     return;
   }
 
-  response.writeHead(404, { "content-type": "application/json; charset=utf-8" });
-  response.end(JSON.stringify({ error: "not-found" }));
+  const isAuthRoute = request.method === "POST" &&
+    ["/api/auth/register", "/api/auth/login"].includes(url.pathname);
+
+  if (isAuthRoute) {
+    const ip = request.socket.remoteAddress ?? "unknown";
+    if (!allowAuthAttempt(ip)) {
+      sendJson(response, 429, { error: "auth-rate-limit" });
+      return;
+    }
+
+    const body = await readJsonBody(request);
+    const result = url.pathname.endsWith("/register")
+      ? await playerStore.register(body.username, body.password)
+      : await playerStore.login(body.username, body.password);
+    sendJson(response, url.pathname.endsWith("/register") ? 201 : 200, result);
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/auth/logout") {
+    await playerStore.logout(getBearerToken(request));
+    response.writeHead(204, { "cache-control": "no-store" });
+    response.end();
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/me") {
+    const profile = await playerStore.getProfile(getBearerToken(request));
+    if (!profile) {
+      sendJson(response, 401, { error: "not-authenticated" });
+      return;
+    }
+    sendJson(response, 200, { profile });
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/leaderboard") {
+    const requestedLimit = Number(url.searchParams.get("limit") ?? 20);
+    sendJson(response, 200, { players: playerStore.getLeaderboard(requestedLimit) });
+    return;
+  }
+
+  sendJson(response, 404, { error: "not-found" });
+}
+
+const httpServer = createServer((request, response) => {
+  void handleHttpRequest(request, response).catch((error) => {
+    if (response.headersSent) {
+      response.destroy();
+      return;
+    }
+    const status = getAuthErrorStatus(error);
+    const safeError = status === 500 ? "internal-error" : error.message;
+    sendJson(response, status, { error: safeError });
+  });
 });
 
 const webSocketServer = new WebSocketServer({
@@ -295,11 +455,7 @@ const webSocketServer = new WebSocketServer({
 httpServer.on("upgrade", (request, socket, head) => {
   const url = new URL(request.url ?? "/", "http://localhost");
   const origin = request.headers.origin;
-  const originAllowed = !origin
-    ? true
-    : allowedOrigins.size > 0
-      ? allowedOrigins.has(origin)
-      : process.env.NODE_ENV !== "production";
+  const originAllowed = isOriginAllowed(origin);
 
   if (url.pathname !== "/ws" || !originAllowed) {
     socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
@@ -383,6 +539,8 @@ const heartbeat = setInterval(() => {
   }
 }, HEARTBEAT_MS);
 heartbeat.unref?.();
+
+await playerStore.initialize();
 
 httpServer.listen(PORT, "0.0.0.0", () => {
   process.stdout.write("iG Arena game service listening on port " + PORT + "\n");
