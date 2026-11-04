@@ -1,6 +1,7 @@
 import { Game } from "../game/Game";
 import { GAME_MODES } from "../data/gameModes";
 import { ARENA_MAPS } from "../game/core/maps";
+import { ARENA_EQUIPMENT } from "../game/core/equipment";
 import { GameServiceClient, type ServiceMessage } from "../network/GameServiceClient";
 import { PlayerApiClient, type PlayerProfile, type LeaderboardEntry } from "../network/PlayerApiClient";
 
@@ -26,6 +27,7 @@ type LobbyState = {
 export class App {
   private screen: Screen = "home";
   private selectedMap = "foundry";
+  private selectedEquipment = "pulse-arc";
   private readonly gameServerUrl = import.meta.env.VITE_GAME_SERVER_URL?.trim() ?? "";
   private serviceClient: GameServiceClient | null = null;
   private readonly playerApi = import.meta.env.VITE_GAME_API_URL?.trim()
@@ -49,7 +51,6 @@ export class App {
 
   private render(): void {
     if (this.game) return;
-
     this.root.innerHTML = [
       '<div class="app-shell">',
       this.renderHeader(),
@@ -59,7 +60,6 @@ export class App {
       '<footer class="site-footer"><span>iG ARENA</span><span>INDEPENDENT BROWSER GAME</span><span class="footer-status"><i></i> LOCAL BUILD</span></footer>',
       '</div>'
     ].join("");
-
     this.bindNavigation();
   }
 
@@ -70,7 +70,6 @@ export class App {
       { id: "leaderboard", label: "RANKINGS" },
       { id: "profile", label: "PROFILE" }
     ];
-
     return [
       '<header class="site-header">',
       '<button class="brand" data-screen="home" aria-label="iG Arena home"><span class="brand-mark">iG</span><span class="brand-name">ARENA</span></button>',
@@ -131,11 +130,11 @@ export class App {
       '</section>',
       '<section class="mode-grid">' + GAME_MODES.map((mode, index) => this.renderModeCard(mode, index, true)).join("") + '</section>',
       '<section class="map-catalog">',
-      '<div class="section-heading"><div><span class="eyebrow">MAP ROTATION</span><h2>SELECT AN <em>ARENA</em></h2></div><span class="map-catalog-note">3 BLOCKOUT MAPS</span></div>',
+      '<div class="section-heading"><div><span class="eyebrow">MAP ROTATION</span><h2>SELECT AN <em>ARENA</em></h2></div><span class="map-catalog-note">3 ARENA ENVIRONMENTS</span></div>',
       '<div class="map-card-grid">' + ARENA_MAPS.map((map) => this.renderMapCard(map)).join("") + '</div>',
       '<div class="map-selection-action"><span class="availability-pill"><i></i> LOCAL TRAINING AVAILABLE</span><button class="button button-primary" data-action="start-training">ENTER SELECTED MAP <span>→</span></button></div>',
       '</section>',
-      '<p class="service-note"><span>i</span> Arena and Deathmatch are shown as planned modes. Matchmaking, player sessions and online scoring are not active yet.</p>'
+      '<p class="service-note"><span>i</span> Training is playable locally. Arena and Deathmatch can currently reach staging rooms; synchronized 3D matches are still in development.</p>'
     ].join("");
   }
 
@@ -162,13 +161,41 @@ export class App {
   private renderMapCard(map: typeof ARENA_MAPS[number]): string {
     const selected = this.selectedMap === map.id;
     return [
-      '<button class="map-card ' + (selected ? "selected" : "") + '" data-map-choice="' + map.id + '" aria-pressed="' + selected + '">',
+      '<button class="map-card map-' + map.id + ' ' + (selected ? "selected" : "") + '" data-map-choice="' + map.id + '" aria-pressed="' + selected + '">',
+      '<span class="map-preview" aria-hidden="true"><i></i><i></i><i></i><b></b></span>',
       '<span class="map-card-index">' + map.id.toUpperCase() + '</span>',
       '<strong>' + map.name + '</strong>',
       '<span class="map-card-environment">' + map.environment + '</span>',
       '<span class="map-card-description">' + map.description + '</span>',
       '<span class="map-card-select">' + (selected ? "SELECTED" : "SELECT MAP") + '</span>',
       '</button>'
+    ].join("");
+  }
+
+  private renderServicePage(_page: "armory"): string {
+    const equipped = ARENA_EQUIPMENT.find((item) => item.id === this.selectedEquipment) ?? ARENA_EQUIPMENT[0];
+    return [
+      '<section class="armory-page">',
+      '<div class="eyebrow"><span></span> PLAYER CUSTOMIZATION · TRAINING GEAR</div>',
+      '<div class="armory-heading"><div><h1>THE <em>LOADOUT</em></h1><p>Choose the energy device you carry into Training. Each device has its own pulse style and energy profile.</p></div><div class="equipped-chip"><span>ACTIVE DEVICE</span><strong>' + equipped.name + '</strong></div></div>',
+      '<div class="equipment-grid">',
+      ARENA_EQUIPMENT.map((item, index) => {
+        const active = item.id === this.selectedEquipment;
+        return [
+          '<button class="equipment-card ' + (active ? "equipped" : "") + '" data-equipment-choice="' + item.id + '" style="--equipment-accent:' + item.accent + ';--equipment-glow:' + item.glow + '" aria-pressed="' + active + '">',
+          '<div class="equipment-art"><span class="equipment-halo"></span><span class="equipment-device"><i></i><b></b></span><small>0' + (index + 1) + '</small></div>',
+          '<span class="equipment-category">' + item.className + ' SERIES · ENERGY PROJECTOR</span>',
+          '<strong>' + item.name + '</strong>',
+          '<p>' + item.description + '</p>',
+          '<div class="equipment-stats"><span><small>CAPACITY</small><b>' + item.capacity + '</b></span><span><small>RESERVE</small><b>' + item.reserve + '</b></span><span><small>PULSE</small><b>' + (item.pulseCooldownMs / 1000).toFixed(2) + 's</b></span></div>',
+          '<span class="equipment-select">' + (active ? "CURRENTLY EQUIPPED" : "EQUIP DEVICE") + '</span>',
+          '</button>'
+        ].join("");
+      }).join(""),
+      '</div>',
+      '<div class="armory-footer"><span class="armory-note"><i></i> LOADOUT SAVED FOR THIS BROWSER SESSION</span><button class="button button-primary" data-action="start-training">ENTER TRAINING <span>→</span></button></div>',
+      '<p class="armory-disclaimer">These are fictional, non-realistic energy devices for the browser training game. Visual and energy settings are game-only.</p>',
+      '</section>'
     ].join("");
   }
 
@@ -223,7 +250,7 @@ export class App {
         '<section class="service-page"><div class="eyebrow"><span></span> PLAYER IDENTITY</div>',
         '<h1>PLAYER <em>PROFILE</em></h1>',
         '<p class="service-description">The account service URL has not been configured for this web build.</p>',
-        '<div class="service-state"><span class="state-line"></span><div><strong>PROFILE API NOT CONFIGURED</strong><p>Set VITE_GAME_API_URL to the deployed game-service HTTP address.</p></div></div>',
+        '<div class="service-state"><span class="state-line"></span><div><strong>PROFILE API NOT CONFIGURED</strong><p>Set VITE_GAME_API_URL to the game-service HTTP address.</p></div></div>',
         '</section>'
       ].join("");
     }
@@ -277,7 +304,7 @@ export class App {
 
   private renderLeaderboardPage(): string {
     if (!this.playerApi) {
-      return '<section class="service-page"><div class="eyebrow"><span></span> COMPETITIVE PROGRESSION</div><h1>THE <em>RANKINGS</em></h1><div class="service-state"><span class="state-line"></span><div><strong>RANKING API NOT CONFIGURED</strong><p>Set VITE_GAME_API_URL to the deployed game-service HTTP address.</p></div></div></section>';
+      return '<section class="service-page"><div class="eyebrow"><span></span> COMPETITIVE PROGRESSION</div><h1>THE <em>RANKINGS</em></h1><div class="service-state"><span class="state-line"></span><div><strong>RANKING API NOT CONFIGURED</strong><p>Set VITE_GAME_API_URL to the game-service HTTP address.</p></div></div></section>';
     }
 
     const rows = (this.leaderboard ?? []).map((entry) =>
@@ -292,8 +319,7 @@ export class App {
         this.leaderboardError ? '<div class="service-state"><span class="state-line"></span><div><strong>RANKINGS UNAVAILABLE</strong><p>' + this.escapeHtml(this.leaderboardError) + '</p></div></div>' :
         this.leaderboard?.length
           ? '<div class="leaderboard-table"><div class="leaderboard-header"><span>RANK</span><span>PLAYER</span><span>WINS</span><span>EXPERIENCE</span></div>' + rows + '</div>'
-          : '<div class="leaderboard-empty"><strong>NO MATCH RESULTS YET</strong><p>Player accounts are ready. Rankings will fill when the live match system starts recording results.</p></div>',
-      '<p class="account-footnote">The ranking API is connected, but live match results are not yet linked to player profiles.</p>',
+          : '<div class="leaderboard-empty"><strong>NO MATCH RESULTS YET</strong><p>Player accounts are ready. Rankings will fill when live matches begin recording results.</p></div>',
       '</section>'
     ].join("");
   }
@@ -369,19 +395,6 @@ export class App {
     }
   }
 
-  private renderServicePage(_page: "armory"): string {
-    return [
-      '<section class="service-page">',
-      '<div class="service-page-mark">02</div>',
-      '<div class="eyebrow"><span></span> PLAYER CUSTOMIZATION</div>',
-      '<h1>YOUR <em>LOADOUT</em></h1>',
-      '<p class="service-description">Player presets and saved customization will be available in a later game update.</p>',
-      '<div class="service-state"><span class="state-line"></span><div><strong>CUSTOMIZATION SERVICE NOT CONNECTED</strong><p>This section is reserved for future player settings. No inventory or equipment is being stored yet.</p></div></div>',
-      '<button class="button button-secondary" data-screen="play">BACK TO GAME MODES <span>→</span></button>',
-      '</section>'
-    ].join("");
-  }
-
   private bindNavigation(): void {
     this.root.querySelectorAll<HTMLElement>("[data-screen]").forEach((element) => {
       element.addEventListener("click", () => {
@@ -399,6 +412,15 @@ export class App {
         const mapId = element.dataset.mapChoice;
         if (!mapId || !ARENA_MAPS.some((map) => map.id === mapId)) return;
         this.selectedMap = mapId;
+        this.render();
+      });
+    });
+
+    this.root.querySelectorAll<HTMLElement>("[data-equipment-choice]").forEach((element) => {
+      element.addEventListener("click", () => {
+        const equipmentId = element.dataset.equipmentChoice;
+        if (!equipmentId || !ARENA_EQUIPMENT.some((item) => item.id === equipmentId)) return;
+        this.selectedEquipment = equipmentId;
         this.render();
       });
     });
@@ -524,7 +546,6 @@ export class App {
       default:
         return;
     }
-
     this.render();
   }
 
@@ -541,26 +562,27 @@ export class App {
 
   private startTraining(mapId: string = this.selectedMap): void {
     if (this.game) return;
-
+    const selected = ARENA_EQUIPMENT.find((item) => item.id === this.selectedEquipment) ?? ARENA_EQUIPMENT[0];
     this.root.innerHTML = [
       '<section class="game-view">',
       '<div id="game-root" class="game-canvas"></div>',
-      '<header class="game-topbar"><div class="game-brand"><span class="brand-mark">iG</span><span>TRAINING · ' + mapId.toUpperCase() + '</span></div><button class="game-exit" id="exit-session">EXIT SESSION <span>×</span></button></header>',
+      '<header class="game-topbar"><div class="game-brand"><span class="brand-mark">iG</span><span>TRAINING · ' + mapId.toUpperCase() + '</span><span class="game-equipment-tag">' + selected.name + '</span></div><button class="game-exit" id="exit-session">EXIT SESSION <span>×</span></button></header>',
       '<section class="hud" aria-live="polite">',
-      '<div class="hud-card health-card"><span class="hud-label">HEALTH</span><strong id="health-value">100</strong><div class="meter"><i id="health-fill"></i></div></div>',
-      '<div class="hud-card score-card"><span class="hud-label">SCORE</span><strong id="score-value">0000</strong><span class="hud-sub">TARGETS HIT</span></div>',
-      '<div class="hud-card accuracy-card"><span class="hud-label">ACCURACY</span><strong id="accuracy-value">100%</strong><span class="hud-sub">HIT RATE</span></div>',
+      '<div class="hud-card health-card"><span class="hud-label">ENERGY</span><strong id="health-value">100</strong><div class="meter"><i id="health-fill"></i></div></div>',
+      '<div class="hud-card score-card"><span class="hud-label">SCORE</span><strong id="score-value">0000</strong><span class="hud-sub">DRONES TAGGED</span></div>',
+      '<div class="hud-card accuracy-card"><span class="hud-label">ACCURACY</span><strong id="accuracy-value">100%</strong><span class="hud-sub">PULSE RATE</span></div>',
       '<div class="hud-card time-card"><span class="hud-label">SESSION</span><strong id="time-value">00:00</strong><span class="hud-sub">ELAPSED TIME</span></div>',
-      '<div class="hud-card ammo-card"><span class="hud-label">PULSE</span><strong><span id="ammo-value">30</span><small> / 120</small></strong><span class="hud-sub" id="weapon-status">READY</span></div>',
+      '<div class="hud-card ammo-card"><span class="hud-label" id="equipment-name">' + selected.name + '</span><strong><span id="ammo-value">' + selected.capacity + '</span><small> / ' + selected.reserve + '</small></strong><span class="hud-sub" id="weapon-status">READY</span></div>',
       '</section>',
       '<div class="crosshair" aria-hidden="true"></div><div class="hit-marker" id="hit-marker" aria-hidden="true">+</div>',
-      '<div class="center-message" id="center-message"><div class="eyebrow">LOCAL SOLO SESSION</div><h1 id="overlay-title">ENTER THE <em>RANGE</em></h1><p id="overlay-description">Practice in the iG training facility.</p><button id="start-button" class="button button-primary">START TRAINING <span>→</span></button><button id="leave-training" class="leave-training" hidden>LEAVE TRAINING</button><div class="controls-hint">W A S D <span>MOVE</span> · MOUSE <span>AIM</span> · CLICK <span>FIRE</span> · R <span>RELOAD</span> · SHIFT <span>SPRINT</span></div></div>',
-      '<div class="bottom-hint">ESC TO PAUSE · R TO RELOAD</div><div class="toast" id="toast"></div>',
+      '<div class="center-message" id="center-message"><div class="eyebrow">LOCAL SOLO SESSION</div><h1 id="overlay-title">ENTER THE <em>RANGE</em></h1><p id="overlay-description">Explore the arena and tag the floating training drones.</p><button id="start-button" class="button button-primary">START TRAINING <span>→</span></button><button id="leave-training" class="leave-training" hidden>LEAVE TRAINING</button><div class="controls-hint">W A S D <span>MOVE</span> · SPACE <span>JUMP</span> · SHIFT <span>SPRINT</span> · CTRL <span>CROUCH</span><br>MOUSE <span>LOOK</span> · CLICK <span>PULSE</span> · R <span>RECHARGE</span></div></div>',
+      '<div class="bottom-hint">ESC TO PAUSE · R TO RECHARGE</div><div class="toast" id="toast"></div>',
       '</section>'
     ].join("");
 
     this.game = new Game({
       mapId,
+      equipmentId: this.selectedEquipment,
       mount: this.root.querySelector<HTMLElement>("#game-root")!,
       onHud: (state) => {
         this.setText("#health-value", String(state.health));
@@ -568,6 +590,7 @@ export class App {
         this.setText("#ammo-value", String(state.ammo));
         this.setText(".ammo-card small", " / " + state.reserve);
         this.setText("#weapon-status", state.status);
+        this.setText("#equipment-name", state.equipment);
         this.setText("#accuracy-value", state.accuracy + "%");
         this.setText("#time-value", state.elapsed);
         const fill = this.root.querySelector<HTMLElement>("#health-fill");
@@ -610,10 +633,7 @@ export class App {
       leaveButton.hidden = false;
       overlay.classList.remove("hidden");
     };
-
-    this.game.onResume = () => {
-      overlay.classList.add("hidden");
-    };
+    this.game.onResume = () => overlay.classList.add("hidden");
   }
 
   private setText(selector: string, value: string): void {
