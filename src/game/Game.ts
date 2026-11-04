@@ -105,6 +105,9 @@ export class Game {
     const edge = new THREE.MeshStandardMaterial({
       color: "#758897", metalness: 0.78, roughness: 0.28
     });
+    const glove = new THREE.MeshStandardMaterial({
+      color: "#18232b", metalness: 0.22, roughness: 0.86
+    });
     const glow = new THREE.MeshStandardMaterial({
       color: this.equipment.accent,
       emissive: this.equipment.glow,
@@ -117,6 +120,31 @@ export class Game {
     forearm.position.set(0, -0.035, 0.02);
     forearm.rotation.x = -0.08;
     rig.add(forearm);
+
+    const palm = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.055, 0.18), glove);
+    palm.position.set(0, -0.105, -0.31);
+    rig.add(palm);
+
+    const fingerGeometry = new THREE.BoxGeometry(0.028, 0.032, 0.085);
+    const knuckleGeometry = new THREE.BoxGeometry(0.032, 0.016, 0.03);
+    for (const x of [-0.059, -0.02, 0.02, 0.059]) {
+      const finger = new THREE.Mesh(fingerGeometry, glove);
+      finger.position.set(x, -0.11, -0.405);
+      rig.add(finger);
+
+      const fingertip = new THREE.Mesh(new THREE.SphereGeometry(0.016, 8, 6), glove);
+      fingertip.position.set(x, -0.11, -0.452);
+      rig.add(fingertip);
+
+      const knuckle = new THREE.Mesh(knuckleGeometry, edge);
+      knuckle.position.set(x, -0.078, -0.385);
+      rig.add(knuckle);
+    }
+
+    const thumb = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.034, 0.09), glove);
+    thumb.position.set(0.105, -0.105, -0.305);
+    thumb.rotation.y = -0.48;
+    rig.add(thumb);
 
     const topPlate = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.035, 0.22), edge);
     topPlate.position.set(0, 0.045, -0.005);
