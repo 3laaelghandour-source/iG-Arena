@@ -80,7 +80,7 @@ export class Game {
 
   private spawnTargets(bounds: { width: number; depth: number }) {
     const targetZ = -bounds.depth / 2 + 14;
-    const lane = bounds.width * 0.31;
+    const lane = bounds.width * 0.22;
     const positions = [-lane, -lane * 0.52, 0, lane * 0.52, lane];
     for (const x of positions) this.createTarget(x, 1.45, targetZ);
   }

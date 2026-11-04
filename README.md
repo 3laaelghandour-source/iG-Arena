@@ -6,7 +6,9 @@ iG Arena is an independent browser-based 3D arena game foundation built with Thr
 
 - Main game shell with Home, Play, Loadout, Rankings and Profile sections.
 - Mode selection for Arena, Deathmatch and Training.
-- A local single-player Training Facility that uses the existing Three.js scene.
+- A local single-player training session that can load three selectable arena blockout maps: Foundry, District and Overpass.
+- Map boundaries and basic obstacle collision for player movement.
+- A renderer-independent match rules module for team rounds, free-for-all scoring, countdowns, breaks, time limits and disconnect outcomes.
 - Clear availability states: online modes are marked as planned until a multiplayer backend exists.
 - Responsive desktop and mobile layouts.
 
@@ -35,9 +37,9 @@ Run npm run build, then npm run preview.
 
 ## Roadmap
 
-1. Build out the core game shell, screen flow and mode definitions.
-2. Add real arena maps, player collision, match rules, rounds, team logic and score handling.
-3. Implement a Node.js multiplayer service with server-authoritative sessions and WebSocket networking.
+1. Improve the three blockout maps with finished visual assets, full collision and spawn validation.
+2. Connect the match rules module to a server-authoritative online session service.
+3. Add replicated player movement, room flow and live match state over WebSocket.
 4. Add accounts, saved loadouts, profiles, match history, rankings and persistent progression.
 5. Add matchmaking, private rooms, deployment monitoring and production security.
 
@@ -46,6 +48,11 @@ Run npm run build, then npm run preview.
 - src/app/App.ts — screen flow and game shell.
 - src/data/gameModes.ts — mode definitions and availability.
 - src/game/Game.ts — current local training scene.
+- src/game/core/maps.ts — arena map catalog and spawn data.
+- src/game/core/ArenaMapBuilder.ts — Three.js blockout map builder.
+- src/game/core/MatchEngine.ts — independent match and round rules.
+- src/game/core/matchConfig.ts — validated mode presets.
+- docs/gameplay-foundation.md — gameplay architecture notes.
 - src/game/PlayerController.ts — local player movement and camera controls.
 - src/main.ts — application entry point.
 - src/styles.css — application and game presentation.

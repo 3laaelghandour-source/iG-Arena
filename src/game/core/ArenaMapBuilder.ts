@@ -18,6 +18,7 @@ export function buildArenaMap(scene: THREE.Scene, mapId: string): BuiltArena {
   if (!definition) throw new Error(`Unknown arena map: ${mapId}`);
 
   const owned: THREE.Object3D[] = [];
+  const ownedMaterials = new Set<THREE.Material>();
   const add = (object: THREE.Object3D) => {
     scene.add(object);
     owned.push(object);
@@ -31,9 +32,11 @@ export function buildArenaMap(scene: THREE.Scene, mapId: string): BuiltArena {
   keyLight.position.set(-18, 28, 12);
   add(keyLight);
 
+  const floorMaterial = new THREE.MeshStandardMaterial({ color: "#252d37", roughness: 0.9 });
+  ownedMaterials.add(floorMaterial);
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(definition.bounds.width, definition.bounds.depth),
-    new THREE.MeshStandardMaterial({ color: "#252d37", roughness: 0.9 })
+    floorMaterial
   );
   floor.rotation.x = -Math.PI / 2;
   floor.receiveShadow = true;
@@ -48,6 +51,7 @@ export function buildArenaMap(scene: THREE.Scene, mapId: string): BuiltArena {
   grid.position.y = 0.015;
   const gridMaterials = Array.isArray(grid.material) ? grid.material : [grid.material];
   gridMaterials.forEach((material) => {
+    ownedMaterials.add(material);
     material.transparent = true;
     material.opacity = 0.16;
   });
@@ -93,6 +97,7 @@ export function buildArenaMap(scene: THREE.Scene, mapId: string): BuiltArena {
         scene.remove(object);
         if (object instanceof THREE.Mesh || object instanceof THREE.LineSegments) object.geometry.dispose();
       }
+      for (const material of ownedMaterials) material.dispose();
     }
   };
 }
