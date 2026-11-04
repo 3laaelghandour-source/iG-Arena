@@ -19,8 +19,13 @@ test("accepts a supported Arena queue request", () => {
   });
 });
 
-test("rejects unsupported playlists and maps", () => {
-  assert.throws(() => validateQueueRequest({ mode: "unknown", mapId: "foundry" }), /unsupported-mode/);
+test("rejects unsupported playlists, prototype keys and maps", () => {
+  for (const mode of ["unknown", "__proto__", "constructor", "toString"]) {
+    assert.throws(
+      () => validateQueueRequest({ mode, mapId: "foundry" }),
+      /unsupported-mode/
+    );
+  }
   assert.throws(() => validateQueueRequest({ mode: "arena", mapId: "unknown" }), /unsupported-map/);
 });
 

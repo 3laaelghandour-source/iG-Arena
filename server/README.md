@@ -1,6 +1,6 @@
 # iG Arena game service
 
-A separate Node.js WebSocket service for guest sessions, matchmaking queues and room readiness.
+A separate Node.js WebSocket service used by the iG Arena browser client for guest sessions, matchmaking queues and staging-room readiness.
 
 ## Current responsibilities
 
@@ -9,12 +9,14 @@ A separate Node.js WebSocket service for guest sessions, matchmaking queues and 
 - Temporary guest identities for connected clients.
 - Arena and Deathmatch queues, grouped by selected map.
 - Balanced Red/Blue team assignment for Arena rooms.
-- Room snapshots and ready-state collection.
+- Room snapshots, ready-state collection and timeout cancellation.
 - Queue, room, payload-size, message-rate, connection-count and Origin checks.
 
 ## Important boundary
 
-This service currently creates and manages staging rooms only. When all members are ready, it emits room.launch-ready. It does not yet replicate player movement, run the 3D match simulation, validate in-game scoring, persist accounts or store match history. Do not present it as a complete multiplayer runtime yet.
+The browser client can connect to this service and show the queue and staging lobby. When all room members are ready, it receives room.launch-ready.
+
+This is not yet a live multiplayer game runtime. The service does not replicate player movement, run the 3D match simulation, validate live gameplay scoring, persist accounts or store match history. The browser must never be treated as the trusted source for competitive scores.
 
 All room and queue state is in memory and is cleared when the process restarts. Player IDs are temporary guest IDs, not verified accounts.
 
@@ -34,12 +36,14 @@ The HTTP health route is /healthz and the WebSocket route is /ws.
 
 - PORT — service port; defaults to 8080.
 - NODE_ENV — set to production on the deployed service.
-- ALLOWED_ORIGINS — comma-separated exact browser origins allowed to open WebSocket connections, for example the production frontend origin.
+- ALLOWED_ORIGINS — comma-separated exact browser origins allowed to open WebSocket connections.
 
 In production, configure ALLOWED_ORIGINS to the exact frontend origin. Avoid wildcard origins.
 
+The browser client uses VITE_GAME_SERVER_URL. Copy the root .env.example to .env and set the WebSocket URL.
+
 ## Hosting layout
 
-Deploy the root web client and this service separately. The frontend remains a Vite static site. The WebSocket service needs a Node.js host that supports long-lived WebSocket connections.
+Deploy the root Vite web client and this Node.js service separately. The frontend can be hosted as a static site. The WebSocket service requires a Node.js host that supports long-lived WebSocket connections.
 
-The frontend has not yet been connected to this service. The next integration step is a typed browser client, lobby screen and reconnect handling, followed by server-authoritative gameplay state.
+The next gameplay milestone is the server-authoritative 3D match runtime: player presence and movement state, replicated match phase, and validated score events.

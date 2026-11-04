@@ -21,11 +21,13 @@ export function validateQueueRequest(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     throw new Error("invalid-payload");
   }
+
   const mode = payload.mode;
   const mapId = payload.mapId;
-  const rules = MODE_RULES[mode];
 
-  if (!rules) throw new Error("unsupported-mode");
+  if (typeof mode !== "string" || !Object.hasOwn(MODE_RULES, mode)) {
+    throw new Error("unsupported-mode");
+  }
   if (typeof mapId !== "string" || !AVAILABLE_MAPS.has(mapId)) {
     throw new Error("unsupported-map");
   }
