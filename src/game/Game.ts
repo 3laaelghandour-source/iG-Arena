@@ -2,6 +2,8 @@ import * as THREE from "three";
 import { PlayerController } from "./PlayerController";
 import { buildArenaMap, type BuiltArena } from "./core/ArenaMapBuilder";
 import { getArenaEquipment, type ArenaEquipment } from "./core/equipment";
+import { getArenaMap } from "./core/maps";
+import { createArenaPhysics, type ArenaPhysics } from "./core/PhysicsWorld";
 
 type HudState = {
   health: number;
@@ -28,6 +30,7 @@ export class Game {
   private camera = new THREE.PerspectiveCamera(76, 1, 0.1, 180);
   private renderer: THREE.WebGLRenderer;
   private controller: PlayerController;
+  private physics: ArenaPhysics;
   private arena: BuiltArena;
   private equipment: ArenaEquipment;
   private pulseRig: THREE.Group;
@@ -55,7 +58,21 @@ export class Game {
   onPause?: () => void;
   onResume?: () => void;
 
-  constructor(private options: GameOptions) {
+  static async create(options: GameOptions): Promise<Game> {
+    const mapId = options.mapId ?? "foundry";
+    const definition = getArenaMap(mapId);
+    if (!definition) throw new Error(`Unknown arena map: ${mapId}`);
+    const physics = await createArenaPhysics(definition);
+    try {
+      return new Game(options, physics);
+    } catch (error) {
+      physics.dispose();
+      throw error;
+    }
+  }
+
+  private constructor(private options: GameOptions, physics: ArenaPhysics) {
+    this.physics = physics;
     this.equipment = getArenaEquipment(options.equipmentId ?? "pulse-arc");
     this.ammo = this.equipment.capacity;
     this.reserve = this.equipment.reserve;
@@ -72,13 +89,11 @@ export class Game {
     this.arena = buildArenaMap(this.scene, options.mapId ?? "foundry");
     this.scene.background = new THREE.Color("#101720");
     const mapBounds = this.arena.definition.bounds;
-    this.camera.position.set(0, 1.68, mapBounds.depth / 2 - 7);
     this.scene.add(this.camera);
     this.controller = new PlayerController(
       this.camera,
       this.renderer.domElement,
-      mapBounds,
-      this.arena.colliders
+      this.physics
     );
 
     this.pulseRig = this.createPulseRig();
@@ -437,6 +452,7 @@ export class Game {
     this.started = false;
     cancelAnimationFrame(this.animation);
     this.controller.dispose();
+    this.physics.dispose();
     window.removeEventListener("resize", this.resize);
     window.removeEventListener("mousedown", this.onFire);
     window.removeEventListener("keydown", this.onKey);
